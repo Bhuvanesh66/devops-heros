@@ -379,6 +379,13 @@ $ docker run -d --name apache-published -p 80:80 httpd:2.4
 $ curl http://localhost:80
 <title>It works! Apache httpd</title>                   <- works from Windows
 ```
+![Apache on the host network - container up with no port mappings, and localhost:80 refusing the connection from Windows](image-2.png)
+
+The `PORTS` column is **empty** — host networking publishes nothing, because it does not use
+port mappings. `curl http://localhost:80` from Windows then fails with
+`Unable to connect to the remote server`, which is the PowerShell wording of the same
+connection refusal explained above.
+
 
 ### Task 3 — bind mount, before and after editing
 
@@ -397,4 +404,42 @@ bind-nginx: Up 19 minutes                        <- same container, same uptime
 ```
 
 The uptime is identical before and after, proving the container was never restarted.
+
+#### Step 1 — set the file to its original content
+
+![PowerShell command resetting index.html to Hello students](image-4.png)
+
+The file is edited **on the host** with PowerShell, not inside the container:
+
+```powershell
+(Get-Content index.html) -replace "<h1>Hello students.*</h1>", "<h1>Hello students</h1>" |
+  Set-Content index.html -Encoding utf8
+```
+
+#### Step 2 — the browser shows the original content
+
+![Nginx serving Hello students from the bind-mounted folder](image-5.png)
+
+**http://localhost:8090** serves `Hello students` straight from the host folder.
+
+#### Step 3 — edit the file while the container keeps running
+
+![PowerShell command updating index.html while the container runs](image-6.png)
+
+```powershell
+(Get-Content index.html) -replace "<h1>Hello students</h1>",
+  "<h1>Hello students - UPDATED without restarting the container!</h1>" |
+  Set-Content index.html -Encoding utf8
+```
+
+No `docker restart`, no `docker build`, no `docker run` — only the host file changed.
+
+#### Step 4 — the change appears immediately
+
+![Nginx serving the updated text without any restart](image-7.png)
+
+Refreshing the **same** browser tab shows the new text at once. The container was never
+touched: this is the defining behaviour of a bind mount, and the reason it is the standard
+tool for local development.
+
 
