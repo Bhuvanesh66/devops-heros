@@ -8,6 +8,25 @@
 
 ## Task 1 — Build and run the multi-stage Dockerfile
 
+### Source of the multi-stage Dockerfile
+
+This repository is a **fork of the instructor's repository**
+([Nency-Ravaliya/devops-heros](https://github.com/Nency-Ravaliya/devops-heros)), kept up to
+date, so the multi-stage Dockerfile came directly from it rather than needing a separate
+clone. The equivalent of the clone step was:
+
+```bash
+# the repository was forked on GitHub, then cloned locally
+git clone https://github.com/Bhuvanesh66/devops-heros.git
+cd devops-heros/session6-7-docker/multi-stage-dockerfile
+
+git remote -v          # confirm the origin
+```
+
+The only change made to the original Dockerfile was the port: the assignment requires the
+application on **8080**, so `EXPOSE 3000` became `EXPOSE 8080` and the Express server was
+updated to match.
+
 ### The Dockerfile
 
 ```dockerfile

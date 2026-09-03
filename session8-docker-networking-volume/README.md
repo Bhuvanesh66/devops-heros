@@ -387,6 +387,30 @@ port mappings. `curl http://localhost:80` from Windows then fails with
 connection refusal explained above.
 
 
+### Reaching Apache on port 80 — the working version
+
+Because host networking cannot be reached from Windows, the same image was also run with an
+explicit port publish so the website is genuinely accessible on **port 80**:
+
+```
+$ docker run -d --name apache-published -p 80:80 httpd:2.4
+
+$ docker ps --filter name=apache-published
+NAMES              IMAGE       PORTS                  STATUS
+apache-published   httpd:2.4   0.0.0.0:80->80/tcp     Up 4 seconds
+
+$ curl http://localhost:80
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" ...>
+<html><head>
+<title>It works! Apache httpd</title>
+</head>
+```
+
+The `PORTS` column now reads `0.0.0.0:80->80/tcp` instead of being empty, and the Apache
+welcome page loads at **http://localhost:80**. Comparing the two runs side by side is the
+clearest demonstration of the difference between host networking and bridge networking with
+a published port.
+
 ### Task 3 — bind mount, before and after editing
 
 ```
@@ -443,3 +467,64 @@ touched: this is the defining behaviour of a bind mount, and the reason it is th
 tool for local development.
 
 
+
+---
+
+## Remaining session exercise — the three-tier Docker Compose stack
+
+The [`demo/`](demo/) folder contains a full three-tier application that applies everything
+above through Docker Compose instead of individual `docker run` commands.
+
+| Service | Image | Networks | Purpose |
+| ------- | ----- | -------- | ------- |
+| `frontend` | `nginx:latest` | `frontend_net` | Serves the page, proxies `/api` to the backend |
+| `backend` | built from [`demo/backend`](demo/backend/) | **`frontend_net` + `backend_net`** | Flask API that queries MySQL |
+| `database` | `mysql:8.0` | `backend_net` | Stores the data, on a named volume |
+
+```bash
+cd session8-docker-networking-volume/demo
+docker compose up -d --build
+docker compose ps
+curl http://localhost:8080          # the frontend page
+curl http://localhost:8080/api      # frontend -> backend -> database
+```
+
+### Result
+
+```
+$ docker ps
+NAMES             IMAGE          PORTS
+demo-frontend-1   nginx:latest   0.0.0.0:8080->80/tcp
+demo-backend-1    demo-backend   5000/tcp            <- no published port
+demo-database-1   mysql:8.0      3306/tcp, 33060/tcp <- no published port
+
+$ docker network ls | grep demo
+demo_backend_net    bridge    local
+demo_frontend_net   bridge    local
+
+$ docker inspect demo-backend-1 --format "{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}}={{\$v.IPAddress}} {{end}}"
+demo_backend_net=172.22.0.3 demo_frontend_net=172.23.0.3
+
+$ curl http://localhost:8080/api
+{"backend":"Backend is working!","database":"Hello from MySQL!"}
+```
+
+### What this proves
+
+- The `/api` response travelled the **entire chain**: browser to Nginx, Nginx proxying to
+  `http://backend:5000` by container name, Flask connecting to MySQL at host `database`, and
+  the row coming back out. Both hops used Docker DNS, never an IP address.
+- `backend` again sits on **two networks** (`172.22.0.3` and `172.23.0.3`) — the same pattern
+  built by hand in Task 1, expressed declaratively in YAML.
+- Only the frontend publishes a port. The backend and database have **no published ports at
+  all**, so they are unreachable from the host and can only be contacted from inside their
+  networks. This is the isolation from Task 1, applied properly.
+- Compose created the networks automatically and prefixed them with the project name
+  (`demo_`), which is why running a stack twice does not clash with existing networks.
+- The database uses a **named volume** (`demo_db_data`) rather than a bind mount — the right
+  choice for database files, as set out in Task 3.
+
+```bash
+docker compose down          # stop the stack
+docker compose down -v       # also delete the named volume
+```
