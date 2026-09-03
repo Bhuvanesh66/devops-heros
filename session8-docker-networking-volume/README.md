@@ -329,6 +329,23 @@ docker network rm frontend-net backend-net database-net
 
 ## Verification output
 
+### Task 1 — the three containers running
+
+```powershell
+docker ps --filter name=frontend --filter name=backend --filter name=database `
+  --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+```
+
+![The three containers running with their required images](image-12.png)
+
+All three tiers are up, each on the image the assignment specifies:
+
+| Container | Image | Requirement |
+| --------- | ----- | ----------- |
+| `frontend` | `nginx:alpine` | Nginx or Alpine for the frontend |
+| `backend` | `alpine:latest` | Nginx or Alpine for the backend |
+| `database` | `mysql:8` | MySQL image for the database |
+
 ### Task 1 — networks created and backend on two of them
 
 ```
