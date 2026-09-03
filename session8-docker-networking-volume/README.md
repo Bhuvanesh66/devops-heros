@@ -406,6 +406,8 @@ $ curl http://localhost:80
 </head>
 ```
 
+![Apache reachable on port 80 - browser showing It works and docker ps with 0.0.0.0:80->80/tcp](image-8.png)
+
 The `PORTS` column now reads `0.0.0.0:80->80/tcp` instead of being empty, and the Apache
 welcome page loads at **http://localhost:80**. Comparing the two runs side by side is the
 clearest demonstration of the difference between host networking and bridge networking with
@@ -509,6 +511,16 @@ $ curl http://localhost:8080/api
 {"backend":"Backend is working!","database":"Hello from MySQL!"}
 ```
 
+![Compose stack started - three services, two networks, and the backend holding two IP addresses](image-9.png)
+
+`docker compose up -d` created **both networks and all three containers in one command**.
+`docker compose ps` confirms only the frontend publishes a port; `docker network ls` shows
+the two `demo_`-prefixed networks; and `docker inspect` shows the backend on both of them.
+
+The full chain, verified in the browser at **http://localhost:8080/api**:
+
+![Browser showing the API response with data returned from MySQL through the backend](image-10.png)
+
 ### What this proves
 
 - The `/api` response travelled the **entire chain**: browser to Nginx, Nginx proxying to
@@ -528,3 +540,16 @@ $ curl http://localhost:8080/api
 docker compose down          # stop the stack
 docker compose down -v       # also delete the named volume
 ```
+
+
+### Tearing the stack down
+
+![Full lifecycle - compose up, inspection, compose down removing containers and networks, then restarting the multi-stage container](image-11.png)
+
+`docker compose down` removed **all three containers and both networks** in one command —
+the same teardown that would otherwise need several `docker rm` and `docker network rm`
+calls. The named volume `demo_db_data` deliberately survives, so the database keeps its
+data; `docker compose down -v` would delete that too.
+
+The multi-stage container was then restarted, since the Compose frontend and the multi-stage
+application both use port **8080** and only one can hold it at a time.
