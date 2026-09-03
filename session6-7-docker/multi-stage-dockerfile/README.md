@@ -83,6 +83,8 @@ The page displays exactly the required text:
 
 In a browser: **http://localhost:8080**
 
+![Multi-stage application in the browser showing Hello World from Docker multi-stage build](image.png)
+
 
 ### `docker ps` showing the container on port 8080
 
@@ -91,6 +93,8 @@ $ docker ps
 NAMES          IMAGE                   PORTS                                         STATUS
 multistage-c   multistage-app:latest   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp   Up
 ```
+
+![docker ps showing multistage-c mapped to port 8080](image-1.png)
 
 The `PORTS` column confirms **`0.0.0.0:8080->8080/tcp`** — host port 8080 mapped to
 container port 8080.
@@ -123,6 +127,8 @@ docker run -d --name hello-java-c -p 8081:8080 hello-java
 
 docker ps
 ```
+
+![Java, Python and Node.js applications running side by side](image-2.png)
 
 Verified output from all three:
 
@@ -173,3 +179,5 @@ is not needed at runtime at all. Shipping the same app as a Node image would be 
 - Build tools, secrets used at build time, and dev dependencies stay behind — a security
   benefit as much as a size one.
 - Smaller images pull faster, which matters in CI/CD where images are pulled on every deploy.
+
+

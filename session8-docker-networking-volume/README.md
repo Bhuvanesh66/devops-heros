@@ -342,6 +342,8 @@ $ docker inspect backend --format "{{range \$k, \$v := .NetworkSettings.Networks
 database-net=172.21.0.2 frontend-net=172.19.0.3
 ```
 
+![docker network ls and backend attached to two networks](image.png)
+
 ### Task 1 — connectivity and isolation
 
 ```
@@ -357,6 +359,8 @@ $ docker exec backend ping -c 2 database
 $ docker exec frontend ping -c 2 database
 ping: bad address "database"
 ```
+
+![Ping tests showing connectivity and cross-network isolation](image-1.png)
 
 ### Task 2 — Apache on the host network
 

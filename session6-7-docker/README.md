@@ -232,49 +232,50 @@ docker system prune -a             # full cleanup
 ```
 
 Resources are listed in [docker.md](docker.md).
+
 ---
 
-## Verification output
+## Verification — screenshots
 
-### `docker images` — all images built
+### `docker ps` — all containers running with their published ports
 
-```
-REPOSITORY          TAG      SIZE
-multistage-app      latest   247MB
-hello-react         latest   102MB
-hello-java          latest   286MB
-hello-apache        latest   175MB
-hello-nginx         latest   250MB
-hello-python-app    latest   222MB
-hello-nodejs-app    latest   253MB
-```
+![docker ps showing all containers and their published ports](image.png)
 
-### `docker ps` — all six containers running
+Every application is up, each on its own host port: 3000, 5000, 8081, 8082, 3001, 8083 and
+8080 for the multi-stage build.
 
-```
-NAMES           IMAGE                     PORTS                            STATUS
-hello-node      hello-nodejs-app:latest   0.0.0.0:3000->3000/tcp           Up 22 minutes
-hello-py        hello-python-app:latest   0.0.0.0:5000->5000/tcp           Up 22 minutes
-hello-java-c    hello-java:latest         0.0.0.0:8081->8080/tcp           Up 22 minutes
-hello-apc       hello-apache:latest       0.0.0.0:8082->80/tcp             Up 22 minutes
-hello-react-c   hello-react:latest        0.0.0.0:3001->80/tcp             Up 22 minutes
-hello-ngx       hello-nginx:latest        0.0.0.0:8083->80/tcp             Up 22 minutes
-multistage-c    multistage-app:latest     0.0.0.0:8080->8080/tcp           Up 21 minutes
-```
+### `docker images` — all built images
 
-### Hello World served by every application
+![docker images listing the built hello-world images](image-1.png)
 
-Each endpoint was requested with `curl` to confirm the page content:
+The six `hello-*` images and `multistage-app` are all present. The sizes confirm the
+multi-stage benefit: `hello-react` is **102MB** against **253MB** for `hello-nodejs-app`.
 
-```
-$ curl http://localhost:3000     <h1>Hello World from Docker!</h1>
-$ curl http://localhost:5000     <h1>Hello World from Python + Docker!</h1>
-$ curl http://localhost:8081     <h1>Hello World from Java + Docker!</h1>
-$ curl http://localhost:8082     <h1>Hello World from Apache + Docker!</h1>
-$ curl http://localhost:8083     <h1>Hello World from Nginx + Docker!</h1>
-$ curl http://localhost:3001     <title>Hello Docker - React</title>
-```
+### Hello World displayed on a webpage
 
-The React app returns the HTML shell because React renders in the browser; opening
-http://localhost:3001 displays **Hello World from React + Docker!**
+**1. Node.js — http://localhost:3000**
 
+![Node.js app showing Hello World from Docker](image-2.png)
+
+**2. Python — http://localhost:5000**
+
+![Python Flask app showing Hello World](image-3.png)
+
+**3. Java — http://localhost:8081**
+
+![Java app showing Hello World](image-4.png)
+
+**4. Apache — http://localhost:8082**
+
+![Apache httpd showing Hello World](image-5.png)
+
+**5. React — http://localhost:3001**
+
+![React app showing Hello World, built with Vite and served by Nginx](image-6.png)
+
+**6. Nginx — http://localhost:8083**
+
+![Nginx showing Hello World](image-7.png)
+
+All six display Hello World in the browser, confirming every application was built, run and
+served successfully from its own container.
