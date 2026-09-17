@@ -1,0 +1,5 @@
+# Shell scripts must keep LF endings - CRLF makes bash fail with
+# "$'\r': command not found" when the repo is used from WSL or Linux.
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
