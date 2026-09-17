@@ -1,0 +1,28 @@
+# ReplicaSet: keeps exactly .spec.replicas Pods matching .spec.selector alive.
+# It has NO update strategy - changing .spec.template here does NOT restart
+# existing Pods. That gap is what a Deployment fills.
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: yatri-backend-rs
+  labels:
+    app: yatri-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: yatri-backend
+  template:
+    metadata:
+      labels:
+        app: yatri-backend      # MUST match the selector above
+    spec:
+      containers:
+        - name: backend
+          image: nginx:1.29-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"

@@ -1,0 +1,19 @@
+# 05 — resource requests and limits.
+#   requests -> what the SCHEDULER reserves when picking a node
+#   limits   -> what the KUBELET/cgroup enforces at runtime
+# CPU over the limit is throttled. Memory over the limit is OOMKilled.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-05-resources
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.29-alpine
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "100m"
+        limits:
+          memory: "128Mi"
+          cpu: "250m"

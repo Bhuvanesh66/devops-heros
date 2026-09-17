@@ -1,0 +1,28 @@
+# 10 — init containers. They run to completion, IN ORDER, BEFORE any app
+# container starts. If one fails, the Pod restarts it (per restartPolicy)
+# and the app container never starts at all.
+# Watch STATUS: Init:0/2 -> Init:1/2 -> PodInitializing -> Running.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-10-init
+spec:
+  volumes:
+    - name: web
+      emptyDir: {}
+  initContainers:
+    - name: init-01-wait
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'init 1: waiting for a dependency'; sleep 10; echo 'init 1: done'"]
+    - name: init-02-seed
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'init 2: seeding the web root'; echo '<h1>Seeded by an init container</h1>' > /work/index.html; sleep 5; echo 'init 2: done'"]
+      volumeMounts:
+        - name: web
+          mountPath: /work
+  containers:
+    - name: nginx
+      image: nginx:1.29-alpine
+      volumeMounts:
+        - name: web
+          mountPath: /usr/share/nginx/html

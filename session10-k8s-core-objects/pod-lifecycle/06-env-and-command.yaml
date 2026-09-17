@@ -1,0 +1,37 @@
+# 06 — environment variables, plus the downward API, plus overriding the image
+# entrypoint with command/args.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-06-env
+spec:
+  restartPolicy: Never
+  containers:
+    - name: printer
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "APP_NAME    = $APP_NAME"
+          echo "APP_ENV     = $APP_ENV"
+          echo "MY_POD_NAME = $MY_POD_NAME"
+          echo "MY_POD_IP   = $MY_POD_IP"
+          echo "MY_NODE     = $MY_NODE_NAME"
+      env:
+        - name: APP_NAME
+          value: "yatri-backend"
+        - name: APP_ENV
+          value: "development"
+        # downward API: values Kubernetes fills in at runtime
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: MY_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: MY_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName

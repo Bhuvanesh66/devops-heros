@@ -1,0 +1,29 @@
+# 07 — readinessProbe. The container is UP immediately but NOT READY for ~30s,
+# because /ready does not exist until the startup script creates it.
+# Watch READY go 0/1 -> 1/1 while STATUS stays Running the whole time.
+# A not-ready Pod is removed from Service endpoints but is NOT restarted.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-07-readiness
+  labels:
+    app: readiness-demo
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.29-alpine
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "warming up for 30 seconds before serving traffic..."
+          sleep 30
+          echo ok > /usr/share/nginx/html/ready
+          echo "now ready"
+          nginx -g 'daemon off;'
+      readinessProbe:
+        httpGet:
+          path: /ready
+          port: 80
+        initialDelaySeconds: 3
+        periodSeconds: 3
+        failureThreshold: 30

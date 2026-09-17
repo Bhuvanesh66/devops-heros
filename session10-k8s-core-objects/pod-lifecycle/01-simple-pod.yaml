@@ -1,0 +1,11 @@
+# 01 — The simplest possible Pod: the four mandatory fields and one container.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-01-simple
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.29-alpine
+      ports:
+        - containerPort: 80

@@ -1,0 +1,17 @@
+# 02 — Labels are for SELECTING objects. Annotations are for attaching data
+# that no selector will ever match on.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-02-labels
+  labels:
+    app: yatri
+    tier: backend
+    env: dev
+  annotations:
+    owner: "Bhuvanesh M S (24bcs10134)"
+    description: "Demonstrates labels vs annotations"
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.29-alpine

@@ -1,0 +1,12 @@
+# 03 — restartPolicy: Never. The container does some work and exits 0.
+# Expected end state: STATUS Completed, pod phase Succeeded. It is NOT restarted.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-03-never
+spec:
+  restartPolicy: Never
+  containers:
+    - name: worker
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'doing one unit of work'; sleep 5; echo done; exit 0"]

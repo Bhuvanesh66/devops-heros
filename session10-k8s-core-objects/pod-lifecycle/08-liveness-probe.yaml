@@ -1,0 +1,25 @@
+# 08 — livenessProbe. The app is healthy for 25s, then deletes its own health
+# file and hangs. The probe then fails 3 times in a row and the kubelet KILLS
+# and RESTARTS the container. Watch RESTARTS climb.
+# readiness removes traffic; liveness restarts the container. That is the difference.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-08-liveness
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.29-alpine
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo ok > /usr/share/nginx/html/healthz
+          ( sleep 25; echo "simulating a deadlock - removing healthz"; rm -f /usr/share/nginx/html/healthz ) &
+          nginx -g 'daemon off;'
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 5
+        failureThreshold: 3

@@ -1,0 +1,18 @@
+# 12 — graceful termination.
+# Delete sequence: Pod removed from endpoints -> preStop hook runs ->
+# SIGTERM to PID 1 -> wait up to terminationGracePeriodSeconds -> SIGKILL.
+# The preStop hook is the standard trick to let in-flight requests drain before
+# the process is even told to stop.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-12-graceful
+spec:
+  terminationGracePeriodSeconds: 30
+  containers:
+    - name: app
+      image: nginx:1.29-alpine
+      lifecycle:
+        preStop:
+          exec:
+            command: ["sh", "-c", "echo 'preStop: draining for 10s'; sleep 10"]

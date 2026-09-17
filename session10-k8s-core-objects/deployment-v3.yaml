@@ -1,0 +1,34 @@
+# V3 - third revision, for building up rollout history.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yatri-backend
+  annotations:
+    kubernetes.io/change-cause: "V3: upgrade to nginx:1.27-alpine"
+  labels:
+    app: yatri-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: yatri-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: yatri-backend
+        version: v3
+    spec:
+      containers:
+        - name: backend
+          image: nginx:1.27-alpine      # V3 image
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"

@@ -1,0 +1,21 @@
+# BROKEN ON PURPOSE.
+# .spec.selector.matchLabels says app=frontend, but the Pod template is labelled
+# app=backend. The Deployment would create Pods it could never own or count.
+# The API server rejects this at admission time - nothing is created at all.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selector-mismatch
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend          # <-- selector
+  template:
+    metadata:
+      labels:
+        app: backend         # <-- does NOT match the selector
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.29-alpine

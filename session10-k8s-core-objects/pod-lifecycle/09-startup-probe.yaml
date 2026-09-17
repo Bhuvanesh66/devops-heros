@@ -1,0 +1,33 @@
+# 09 — startupProbe, for slow-starting apps.
+# While the startupProbe is running, the liveness and readiness probes are
+# DISABLED. This is how you give a slow app 60s to boot without having to set a
+# huge initialDelaySeconds on liveness (which would then leave it unmonitored
+# for 60s after every restart, too).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-09-startup
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.29-alpine
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "slow boot: 40 seconds of migrations..."
+          sleep 40
+          echo ok > /usr/share/nginx/html/healthz
+          echo "boot finished"
+          nginx -g 'daemon off;'
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: 80
+        periodSeconds: 5
+        failureThreshold: 20      # 20 x 5s = 100s budget to start
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 80
+        periodSeconds: 5
+        failureThreshold: 3

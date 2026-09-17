@@ -1,0 +1,22 @@
+# BROKEN ON PURPOSE.
+# The image tag does not exist. This is accepted by the API server - the failure
+# only shows up at runtime as ErrImagePull / ImagePullBackOff.
+# Applied over a healthy Deployment, the rolling update STALLS: the old Pods stay
+# up because maxUnavailable never lets them be removed until the new ones are Ready.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-image
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: broken-image
+  template:
+    metadata:
+      labels:
+        app: broken-image
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:this-tag-does-not-exist
