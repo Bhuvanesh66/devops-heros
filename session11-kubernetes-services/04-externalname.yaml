@@ -1,0 +1,10 @@
+# ExternalName - the odd one out.
+# NO selector, NO endpoints, NO proxying, NO cluster IP. CoreDNS simply answers
+# with a CNAME to the external host. It is a DNS alias, nothing more.
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-db
+spec:
+  type: ExternalName
+  externalName: www.kubernetes.io

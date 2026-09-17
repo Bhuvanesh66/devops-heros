@@ -1,0 +1,39 @@
+# A StatefulSet behind the headless Service, to show STABLE per-Pod DNS:
+#   web-0.yatri-sts.default.svc.cluster.local
+#   web-1.yatri-sts.default.svc.cluster.local
+# A Deployment can never give you this - its Pod names are random.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yatri-sts
+spec:
+  clusterIP: None
+  selector:
+    app: yatri-sts
+  ports:
+    - port: 80
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  serviceName: yatri-sts        # must name the headless Service
+  replicas: 2
+  selector:
+    matchLabels:
+      app: yatri-sts
+  template:
+    metadata:
+      labels:
+        app: yatri-sts
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.29-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"

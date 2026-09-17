@@ -1,0 +1,15 @@
+# NodePort - ClusterIP, PLUS a port opened on EVERY node.
+# nodePort must be in the 30000-32767 range. Omit it and Kubernetes picks one.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yatri-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: yatri-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30080

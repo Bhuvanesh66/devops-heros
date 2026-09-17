@@ -1,0 +1,16 @@
+# Headless Service - clusterIP: None.
+# No virtual IP and no load balancing. DNS returns the Pod IPs DIRECTLY,
+# one A record per ready endpoint. This is what StatefulSets use so each Pod
+# is individually addressable.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yatri-headless
+spec:
+  clusterIP: None
+  selector:
+    app: yatri-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

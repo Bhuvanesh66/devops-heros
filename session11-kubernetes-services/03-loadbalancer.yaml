@@ -1,0 +1,15 @@
+# LoadBalancer - NodePort, PLUS an external load balancer provisioned by the
+# cloud provider. On bare Minikube there is no cloud provider, so EXTERNAL-IP
+# stays <pending> until `minikube tunnel` is run.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yatri-loadbalancer
+spec:
+  type: LoadBalancer
+  selector:
+    app: yatri-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

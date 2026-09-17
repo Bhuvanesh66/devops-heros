@@ -1,0 +1,11 @@
+# A throwaway Pod with curl, dig and nslookup, used to resolve Service names
+# from INSIDE the cluster. Nothing here is reachable from the host.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-test
+spec:
+  containers:
+    - name: net
+      image: nicolaka/netshoot:latest
+      command: ["sleep", "infinity"]

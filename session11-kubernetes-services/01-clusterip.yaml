@@ -1,0 +1,14 @@
+# ClusterIP - the DEFAULT Service type.
+# A stable virtual IP + DNS name, reachable ONLY from inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yatri-clusterip
+spec:
+  type: ClusterIP
+  selector:
+    app: yatri-backend        # this is what binds the Service to the Pods
+  ports:
+    - name: http
+      port: 80                # the port the SERVICE listens on
+      targetPort: 8080        # the port the CONTAINER listens on
