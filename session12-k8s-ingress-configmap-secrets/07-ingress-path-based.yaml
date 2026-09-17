@@ -1,0 +1,29 @@
+# PATH-based routing: one hostname, different paths to different Services.
+# The rewrite-target annotation strips the matched prefix before forwarding,
+# so the backend sees "/" rather than "/shop".
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yatri-path-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: yatri.local
+      http:
+        paths:
+          - path: /shop(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: shop-svc
+                port:
+                  number: 80
+          - path: /admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: admin-svc
+                port:
+                  number: 80

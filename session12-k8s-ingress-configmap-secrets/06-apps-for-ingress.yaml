@@ -1,0 +1,54 @@
+# Two separate apps, so the Ingress has something to route BETWEEN.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: shop-app }
+  template:
+    metadata:
+      labels: { app: shop-app }
+    spec:
+      containers:
+        - name: echo
+          image: kicbase/echo-server:1.0
+          ports: [{ containerPort: 8080 }]
+          resources:
+            requests: { memory: "32Mi", cpu: "50m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-svc
+spec:
+  selector: { app: shop-app }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: admin-app }
+  template:
+    metadata:
+      labels: { app: admin-app }
+    spec:
+      containers:
+        - name: echo
+          image: kicbase/echo-server:1.0
+          ports: [{ containerPort: 8080 }]
+          resources:
+            requests: { memory: "32Mi", cpu: "50m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-svc
+spec:
+  selector: { app: admin-app }
+  ports: [{ port: 80, targetPort: 8080 }]

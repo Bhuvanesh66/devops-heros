@@ -1,0 +1,23 @@
+# TLS termination at the Ingress. The certificate lives in a Secret of
+# type kubernetes.io/tls, which must have exactly the keys tls.crt and tls.key.
+# The backend Pods still speak plain HTTP - the Ingress controller does the TLS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yatri-tls-ingress
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - secure.yatri.local
+      secretName: yatri-tls
+  rules:
+    - host: secure.yatri.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: shop-svc
+                port: { number: 80 }

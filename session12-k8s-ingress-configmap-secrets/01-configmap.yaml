@@ -1,0 +1,21 @@
+# A ConfigMap holds NON-SECRET configuration as key/value pairs.
+# Two shapes of value are shown here:
+#   - simple scalars, which become environment variables nicely
+#   - whole file contents (the "|" block), which become files in a volume
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yatri-config
+data:
+  APP_NAME: "yatri-backend"
+  APP_ENV: "production"
+  LOG_LEVEL: "debug"
+  # a whole file as one value
+  app.properties: |
+    server.port=8080
+    server.timeout=30s
+    feature.newCheckout=true
+  index.html: |
+    <!doctype html>
+    <h1>Served from a ConfigMap volume</h1>
+    <p>Bhuvanesh M S - 24bcs10134</p>

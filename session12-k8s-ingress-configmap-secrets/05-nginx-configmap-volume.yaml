@@ -1,0 +1,47 @@
+# A realistic use: nginx serving an index.html that lives in a ConfigMap.
+# Because the ConfigMap is mounted as a VOLUME, editing the ConfigMap updates
+# the file in the running Pod - no rebuild, no restart.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-config
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-config
+  template:
+    metadata:
+      labels:
+        app: web-config
+    spec:
+      volumes:
+        - name: html
+          configMap:
+            name: yatri-config
+            items:
+              - key: index.html      # pick ONE key out of the ConfigMap
+                path: index.html
+      containers:
+        - name: nginx
+          image: nginx:1.29-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-config
+spec:
+  selector:
+    app: web-config
+  ports:
+    - port: 80
+      targetPort: 80

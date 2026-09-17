@@ -1,0 +1,27 @@
+# HOST-based routing: two hostnames on the SAME IP and the same port 80.
+# This is the thing a NodePort or LoadBalancer Service cannot do.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yatri-host-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: shop.yatri.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: shop-svc
+                port: { number: 80 }
+    - host: admin.yatri.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-svc
+                port: { number: 80 }

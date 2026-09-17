@@ -1,0 +1,37 @@
+# Injecting config as FILES via volumes.
+# Each key becomes a file whose name is the key and whose content is the value.
+# Secrets mounted this way land on a tmpfs (RAM), never on the node's disk.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: config-volume-demo
+spec:
+  restartPolicy: Never
+  volumes:
+    - name: config-vol
+      configMap:
+        name: yatri-config
+    - name: secret-vol
+      secret:
+        secretName: yatri-secret
+        defaultMode: 0400        # read-only, owner only
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "--- /etc/config ---"; ls -l /etc/config
+          echo; echo "--- app.properties ---"; cat /etc/config/app.properties
+          echo; echo "--- /etc/secret ---"; ls -l /etc/secret
+          echo; echo "--- DB_PASSWORD (already decoded for us) ---"
+          cat /etc/secret/DB_PASSWORD; echo
+          echo; echo "--- what filesystem is the secret on? ---"
+          mount | grep /etc/secret
+      volumeMounts:
+        - name: config-vol
+          mountPath: /etc/config
+          readOnly: true
+        - name: secret-vol
+          mountPath: /etc/secret
+          readOnly: true
