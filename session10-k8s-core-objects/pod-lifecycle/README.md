@@ -33,3 +33,12 @@ kubectl delete -f pod-lifecycle/
 
 Full run-through with real terminal output is in the parent
 [README.md](../README.md#part-1--pod-lifecycle-all-12-files).
+
+---
+
+## `instructor-lab/`
+
+The class repository's own Pod-lifecycle lab (`01-running.yaml` through `12-termination.yaml` plus
+its README) is kept intact in [`instructor-lab/`](instructor-lab/README.md). It covers the
+same ground with different Pod names, so it is kept in a subfolder to avoid two sets of
+manifests colliding in one `kubectl apply -f pod-lifecycle/`.
