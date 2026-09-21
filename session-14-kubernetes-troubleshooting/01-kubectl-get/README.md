@@ -191,3 +191,7 @@ It gives us the current state of Kubernetes resources.
 
 * **Kubernetes Command Line Tool (kubectl):**  
   https://kubernetes.io/docs/reference/kubectl/
+
+![alt text](image.png)
+![alt text](image-1.png)
+![alt text](image-2.png)

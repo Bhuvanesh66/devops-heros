@@ -161,3 +161,8 @@ Logs are often the first place to look when an application is crashing or behavi
 
 * **Kubernetes Logging Architecture:**  
   https://kubernetes.io/docs/concepts/cluster-administration/logging/
+
+
+![alt text](image.png)
+![alt text](image-1.png)
+![alt text](image-2.png)

@@ -162,3 +162,9 @@ What Kubernetes tried to do and what happened
 
 * **Kubernetes Events API:**  
   https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/
+
+
+![alt text](image.png)
+![alt text](image-1.png)
+![alt text](image-2.png)
+![alt text](image-3.png)

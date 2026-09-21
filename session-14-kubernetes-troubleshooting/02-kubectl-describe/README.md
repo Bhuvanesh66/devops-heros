@@ -180,3 +180,8 @@ kubectl describe
 
 * **Kubernetes Pod Lifecycle:**  
   https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
+
+
+![alt text](image.png)
+![alt text](image-1.png)
+![alt text](image-2.png)

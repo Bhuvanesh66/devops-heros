@@ -187,3 +187,8 @@ Kubernetes documentation also recommends `kubectl exec` for running commands ins
 
 * **Get a Shell to a Running Container:**  
   https://kubernetes.io/docs/tasks/debug/debug-application/get-shell-running-container/
+
+
+![alt text](image.png)
+![alt text](image-1.png)
+![alt text](image-2.png)
