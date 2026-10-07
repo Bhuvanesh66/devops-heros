@@ -328,6 +328,11 @@ jobs:
           name: docker-image
           path: ${{ runner.temp }}
 
+      # Trivy does not create missing parent directories for --output, and reports/
+      # is gitignored, so it does not exist on a fresh runner.
+      - name: Create reports directory
+        run: mkdir -p reports
+
       - name: Trivy image scan (JSON report for the gate)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
