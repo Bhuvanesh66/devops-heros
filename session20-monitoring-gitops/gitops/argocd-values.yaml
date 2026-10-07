@@ -1,0 +1,16 @@
+# Argo CD for a local lab: core components only, UI on NodePort 30880 over plain HTTP.
+dex: { enabled: false }
+notifications: { enabled: false }
+applicationSet: { replicas: 0 }
+configs:
+  cm:
+    # check Git every 60 s instead of the default 3 minutes, to keep the demo short
+    timeout.reconciliation: 60s
+  params:
+    server.insecure: true
+    # local lab only: lets the UI be screenshotted without logging in
+    server.disable.auth: true
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30880
