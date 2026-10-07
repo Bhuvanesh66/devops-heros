@@ -1,0 +1,56 @@
+#!/bin/bash
+# Rendered by Terraform templatefile() in compute.tf.
+# Terraform fills in: aws_region, bucket_name, banner_key.
+# Plain $VARS below are shell variables and are left untouched by Terraform.
+set -euxo pipefail
+exec > >(tee /var/log/user-data.log) 2>&1
+
+dnf install -y nginx
+
+# Instance metadata through IMDSv2 (session token required).
+TOKEN=$(curl -sS -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+imds() { curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/$1"; }
+INSTANCE_ID=$(imds instance-id)
+AZ=$(imds placement/availability-zone)
+INSTANCE_TYPE=$(imds instance-type)
+
+WEB_ROOT=/usr/share/nginx/html
+BANNER="<p>The banner could not be downloaded from S3.</p>"
+
+# Retry: a brand-new IAM instance profile can take a few seconds to work.
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if aws s3 cp "s3://${bucket_name}/${banner_key}" "$WEB_ROOT/banner.html" --region "${aws_region}"; then
+    BANNER=$(cat "$WEB_ROOT/banner.html")
+    break
+  fi
+  sleep 6
+done
+
+cat > "$WEB_ROOT/index.html" <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Session 19 - Terraform on AWS</title>
+  <style>
+    body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    td { padding: 4px 12px 4px 0; }
+    .banner { border: 1px solid #ccc; padding: 8px 16px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <h1>Session 19: Cloud &amp; Terraform in Action</h1>
+  <table>
+    <tr><td>Instance ID</td><td>$INSTANCE_ID</td></tr>
+    <tr><td>Instance type</td><td>$INSTANCE_TYPE</td></tr>
+    <tr><td>Availability Zone</td><td>$AZ</td></tr>
+    <tr><td>S3 bucket</td><td>${bucket_name}</td></tr>
+    <tr><td>S3 object</td><td>s3://${bucket_name}/${banner_key}</td></tr>
+  </table>
+  $BANNER
+  <p>Provisioned by Terraform - Session 19 - Bhuvanesh M S</p>
+</body>
+</html>
+EOF
+
+systemctl enable --now nginx
