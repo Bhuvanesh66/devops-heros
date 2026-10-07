@@ -8,13 +8,20 @@
 
 ## Homework task ([task.md](task.md))
 
-Write shell scripts that:
+Create a shell script that:
 
-1. Print the **current date**
-2. Print the **hostname** and the **username**
-3. Capture **process information into a file** using `>` redirection
-4. Print **name, roll number and a comment**
-5. Use **variables**, take input with **`read -p`**, and **create a directory and a file**
+1. Prints the **current date**
+2. Prints the **hostname**
+3. Prints the **username**
+4. Prints the **disk usage**
+5. Prints the **running processes**
+6. Uses **variables** to store and use data
+7. Takes user input using **`read -p`**
+8. Creates a directory using **`mkdir`**
+9. Creates a file using **`touch`**
+10. Stores the running processes in the file using **`>`** output redirection
+
+Commands to use: `mkdir`, `touch`, `echo`, `df`, `ps`, `read -p`, variables, `>`.
 
 plus practise the class-along scripts: variables, input, conditionals, loops, functions, and
 file/redirection operations.
@@ -233,54 +240,40 @@ is `mkdir -p`, which succeeds silently either way — that is what my homework s
 
 [`student_report.sh`](student_report.sh) — covers every requirement in `task.md` in one place.
 
-![Homework script](images/07-homework-script.png)
+The script was updated to cover the two items of the brief it was missing: it now prints
+the **disk usage** (`df -h /`) and the **running processes** (`ps`, top five by CPU) on screen,
+as well as saving the full process list to a file. Below is a real run in a terminal. The
+three answers were typed at the `read -p` prompts, which is why the prompts and the answers
+both appear.
 
-```
-===============================================
-            STUDENT / SYSTEM REPORT
-===============================================
-Current date : Thu Sep 17 18:21:13 UTC 2026
-Hostname     : Asus
-Username     : bhuvanesh
-Logged in    : 0 session(s)
------------------------------------------------
-My name is Bhuvanesh M S
-My roll number is 24bcs10134
-My comment is: Completed the shell scripting homework
------------------------------------------------
-Created directory : report_24bcs10134
-Saved process list: report_24bcs10134/process.log (112 lines)
-Saved details     : report_24bcs10134/student.txt
-```
+![Homework script: a real interactive run](images/07-homework-script.png)
 
-and the artefacts it produced on disk:
+![What the script left on disk](images/08-homework-artifacts.png)
 
-```
-$ ls -l report_24bcs10134/
--rw-r--r-- 1 bhuvanesh bhuvanesh 15786 Sep 17 18:21 process.log
--rw-r--r-- 1 bhuvanesh bhuvanesh   166 Sep 17 18:21 student.txt
+| Requirement | How it is done | Where in the output |
+| ----------- | -------------- | ------------------- |
+| Current date | `current_date=$(date)` | `Current date : Wed Oct 7 10:04:55 UTC 2026` |
+| Hostname | `host_name=$(hostname)` | `Hostname : Asus` |
+| Username | `current_user=$(whoami)` | `Username : bhuvanesh` |
+| **Disk usage** | `disk_usage=$(df -h / \| tail -1)` | `/dev/sdf 1007G 14G 943G 2% /` |
+| **Running processes** | `ps -eo pid,user,%cpu,%mem,comm --sort=-%cpu \| head -6` | top 5 processes by CPU |
+| Variables | every value above goes through one, and `report_dir="report_${roll_no}"` is built from input | |
+| Input | `read -p` × 3 (name, roll number, comment) | the three `Enter your ...` prompts |
+| `mkdir` | `mkdir -p "$report_dir"` | `Created directory : report_24bcs10134` |
+| `touch` | `touch "$report_dir/process.log"` | the file exists before anything is written to it |
+| `>` redirection | `ps -ef > "$report_dir/process.log"` | 153-line `process.log` |
 
-$ cat report_24bcs10134/student.txt
-Name       : Bhuvanesh M S
-Roll number: 24bcs10134
-Comment    : Completed the shell scripting homework
-Generated  : Thu Sep 17 18:21:13 UTC 2026 on Asus by bhuvanesh
-```
+Notes on the output:
 
-| Requirement | How it is done |
-| ----------- | -------------- |
-| Current date | `current_date=$(date)` |
-| Hostname / username | `$(hostname)` and `$(whoami)` |
-| Variables | every value goes through one |
-| Input | `read -p` × 3 |
-| Create a directory | `mkdir -p "report_${roll_no}"` — named from the input |
-| Create a file | `touch "$report_dir/process.log"` |
-| Process info into a file | `ps -ef > "$report_dir/process.log"` |
-| Name / roll number / comment | echoed, **and** written to `student.txt` |
-
-The directory name is built from the roll number the user typed (`report_${roll_no}`), which
-is the point of using variables rather than hardcoding — the same script gives every student
-their own folder.
+- `df -h /` prints sizes in human-readable units. The WSL root filesystem is a 1007G virtual
+  disk, 2% used. `tail -1` drops the header row so only the data line goes into the
+  variable, and the script prints its own header.
+- In the process list, `ps` itself shows a very high `%CPU`. It had only just started, and
+  `%CPU` is CPU time divided by run time, so a process a few milliseconds old can show
+  hundreds of percent. The real steady CPU users underneath are `kube-apiserver` and
+  `containerd`, from the minikube cluster running on this machine.
+- The directory name comes from the roll number that was typed, so every student running the
+  script gets their own `report_<roll>` folder.
 
 A related script, [`test1.sh`](test1.sh), is the in-class version of the same idea.
 
@@ -324,6 +317,8 @@ file *.sh
 | ------------- | ------ |
 | Print the current date | Done — §7 |
 | Print hostname and username | Done — §7 |
+| Print disk usage (`df`) | Done — §7 |
+| Print running processes (`ps`) | Done — §7 |
 | Process info into a file with `>` | Done — §7 |
 | Print name, roll number, comment | Done — §2, §7 |
 | Variables | Done — §1 |

@@ -4,6 +4,8 @@
 # Covers every requirement listed in task.md:
 #   - print the current date
 #   - print the hostname and the username
+#   - print the disk usage
+#   - print the running processes
 #   - capture process info into a file with >
 #   - print name, roll number and a comment
 #   - use variables, take input with read -p,
@@ -15,6 +17,7 @@
 current_date=$(date)
 host_name=$(hostname)
 current_user=$(whoami)
+disk_usage=$(df -h / | tail -1)
 
 echo "==============================================="
 echo "            STUDENT / SYSTEM REPORT"
@@ -32,25 +35,36 @@ echo "Username     : $current_user"
 echo "Logged in    : $(who | wc -l) session(s)"
 echo "-----------------------------------------------"
 
-# ---- 3. take input with read -p ----
+# ---- 3. disk usage (df -h = human-readable sizes) ----
+echo "Disk usage of / :"
+echo "  Filesystem      Size  Used Avail Use% Mounted on"
+echo "  $disk_usage"
+echo "-----------------------------------------------"
+
+# ---- 4. running processes (top 5 by CPU) ----
+echo "Running processes (top 5 by CPU):"
+ps -eo pid,user,%cpu,%mem,comm --sort=-%cpu | head -6
+echo "-----------------------------------------------"
+
+# ---- 5. take input with read -p ----
 read -p "Enter your name: "        name
 read -p "Enter your roll number: " roll_no
 read -p "Enter your comment: "     comment
 echo ""
 
-# ---- 4. print them back using the variables ----
+# ---- 6. print them back using the variables ----
 echo "My name is $name"
 echo "My roll number is $roll_no"
 echo "My comment is: $comment"
 echo "-----------------------------------------------"
 
-# ---- 5. create a directory and a file inside it ----
+# ---- 7. create a directory and a file inside it ----
 report_dir="report_${roll_no}"
 mkdir -p "$report_dir"
 touch "$report_dir/process.log"
 echo "Created directory : $report_dir"
 
-# ---- 6. redirect process info into the file with > ----
+# ---- 8. redirect process info into the file with > ----
 ps -ef > "$report_dir/process.log"
 echo "Saved process list: $report_dir/process.log ($(wc -l < "$report_dir/process.log") lines)"
 
