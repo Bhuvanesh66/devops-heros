@@ -28,6 +28,22 @@ Resources shared by the instructor
 
 My own class notes on IP classes and subnetting are in [ip.md](ip.md).
 
+### Practising the repositories
+
+I cloned two of the repositories and worked through the subnetting one with real numbers:
+
+![Cloning the instructor's repos and a subnetting exercise](image-4.png)
+
+- `Subnetting` and `Network-Troubleshooting` are each a single README of notes. The headings
+  show the subnetting walk-through: what subnetting is, an example scenario, and the steps.
+- **Exercise:** split `192.168.10.0/24` into four `/26` networks. Borrowing 2 host bits gives
+  2² = 4 subnets of 2⁶ = 64 addresses each, of which **62 are usable**: the first is the
+  network address and the last is the broadcast. Python's `ipaddress` module gives the same
+  boundaries I worked out by hand: `.0/.63`, `.64/.127`, `.128/.191`, `.192/.255`.
+- Applied to this machine: WSL's `eth0` is `172.23.147.35/20`, so the network is
+  `172.23.144.0/20` with mask `255.255.240.0`. That's inside the Class B private range
+  `172.16.0.0 – 172.31.255.255`, which confirms it's a private, NAT-ed address.
+
 ### Key concepts revised
 
 **IP address** — a unique identifier for a device on a network. IPv4 is **32 bits**, written
@@ -267,6 +283,32 @@ what makes local traffic possible. From my output:
   they are two distinct pieces of hardware.
 - The table is a **cache** of recent lookups, so the request does not have to be repeated for
   every packet.
+
+---
+
+## E. The classic `net-tools` commands, run for real
+
+`ifconfig`, `route -n`, `netstat`, `arp` and `wget` are explained above, alongside their
+modern replacements. Here they are actually run, so each explanation has matching output:
+
+![ifconfig, route -n, netstat, arp and wget output](image-5.png)
+
+- **`ifconfig eth0`**: the same facts as `ip a` (`inet 172.23.147.35`, `netmask
+  255.255.240.0`, `broadcast 172.23.159.255`, MAC `00:15:5d:4f:e9:18`) plus traffic counters:
+  about 2.7 GB received and 23.8 MB sent, with zero errors and drops. The `mtu` here is
+  **1492**, not the usual 1500. WSL sizes its virtual NIC to fit the path to the host.
+- **`route -n`**: the routing table in numeric form. The `UG` row with destination `0.0.0.0`
+  is the **default gateway** (`172.23.144.1`); `U` rows are directly connected networks. This
+  machine also routes to `docker0` (`172.17.0.0/16`) and to the minikube bridge
+  (`192.168.49.0/24`), which is how it reaches the Kubernetes node at `192.168.49.2`.
+- **`netstat -tulnp`**: listening sockets, the same columns as `ss -tulnp`. `127.0.0.53:53` is
+  the local DNS stub. The `127.0.0.1:3276x` ports belong to the minikube container's published
+  ports (API server, SSH, etc.), bound to loopback only.
+- **`arp -a`**: the gateway `Asus.mshome.net (172.23.144.1)` resolved to a MAC. The minikube
+  node `192.168.49.2` is also in the cache, while `192.168.49.3` shows `<incomplete>`: an ARP
+  request went out and nobody answered, because no container currently holds that IP.
+- **`wget`** saved `github.com/robots.txt` (16,739 bytes) to `dl/robots.txt`, which `ls -l`
+  then shows on disk. `curl` would have printed it to the terminal; `wget` writes a file.
 
 ---
 
