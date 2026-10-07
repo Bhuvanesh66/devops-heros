@@ -1,11 +1,8 @@
 name: Python CI Pipeline
+# Early class practice workflow. It expects requirements.txt at the repo root, which
+# this homework repo does not have, so it failed on every push. Kept for reference and
+# runnable by hand only; the real pipeline is session16-cicd.yml.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 jobs:
   test:

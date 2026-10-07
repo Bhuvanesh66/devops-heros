@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: session16-cicd-demo
+  labels:
+    app: session16-cicd-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: session16-cicd-demo
+  template:
+    metadata:
+      labels:
+        app: session16-cicd-demo
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: web
+          # IMAGE_PLACEHOLDER is replaced with the exact image tag by the deploy job.
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: APP_ENV
+              value: development
+            - name: DEMO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: session16-demo-secret
+                  key: api-key
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

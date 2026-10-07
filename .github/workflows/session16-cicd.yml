@@ -1,0 +1,351 @@
+# Session 16 - CI/CD & GitHub Actions
+# Bhuvanesh M S (24bcs10134)
+#
+# CI  = lint-test (matrix) -> build (Docker image, pushed to GHCR)
+# CD  = deploy (Kubernetes "development" environment inside a kind cluster on the runner)
+
+name: "Session 16 - CI/CD Demo"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "session16-cicd-github-actions/**"
+      - ".github/workflows/session16-cicd.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "session16-cicd-github-actions/**"
+      - ".github/workflows/session16-cicd.yml"
+  workflow_dispatch:
+
+# Least privilege by default; jobs that need more ask for it themselves.
+permissions:
+  contents: read
+
+# One run per branch at a time. New pushes to a PR cancel the older PR run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  APP_DIR: session16-cicd-github-actions
+  IMAGE_NAME: ghcr.io/bhuvanesh66/session16-cicd-demo
+
+defaults:
+  run:
+    shell: bash
+    working-directory: session16-cicd-github-actions
+
+jobs:
+  # ---------------------------------------------------------------- CI: test
+  lint-test:
+    name: Lint & Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: ${{ env.APP_DIR }}/requirements*.txt
+
+      - name: Show runner information
+        run: |
+          echo "Runner OS:    ${RUNNER_OS} (${RUNNER_ARCH})"
+          echo "Runner name:  ${RUNNER_NAME}"
+          echo "Workspace:    ${GITHUB_WORKSPACE}"
+          python --version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: |
+          ruff check --output-format=github .
+          ruff format --check .
+
+      - name: Run tests with coverage
+        run: |
+          mkdir -p reports
+          pytest \
+            --junitxml=reports/junit.xml \
+            --cov \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/coverage.xml
+
+      - name: Write test summary
+        if: always()
+        env:
+          PY_VERSION: ${{ matrix.python-version }}
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import os
+          import xml.etree.ElementTree as ET
+
+          py = os.environ["PY_VERSION"]
+          print(f"### Test results - Python {py}")
+          try:
+              root = ET.parse("reports/junit.xml").getroot()
+          except (FileNotFoundError, ET.ParseError):
+              print("No JUnit report was produced.")
+              raise SystemExit(0)
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          tests = int(suite.get("tests", 0))
+          failures = int(suite.get("failures", 0))
+          errors = int(suite.get("errors", 0))
+          skipped = int(suite.get("skipped", 0))
+          passed = tests - failures - errors - skipped
+          print("| Total | Passed | Failed | Errors | Skipped | Time (s) |")
+          print("|------:|-------:|-------:|-------:|--------:|---------:|")
+          print(f"| {tests} | {passed} | {failures} | {errors} | {skipped} | {suite.get('time')} |")
+          try:
+              cov = ET.parse("reports/coverage.xml").getroot()
+              print(f"\n**Line coverage:** {float(cov.get('line-rate', 0)) * 100:.1f}%")
+          except (FileNotFoundError, ET.ParseError):
+              pass
+          PY
+
+      - name: Upload test results and coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: ${{ env.APP_DIR }}/reports/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # --------------------------------------------------------------- CI: build
+  build:
+    name: Build & Push Docker Image
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write # needed to push to ghcr.io
+    outputs:
+      image: ${{ steps.vars.outputs.image }}
+      pushed: ${{ steps.vars.outputs.push }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Compute image tag
+        id: vars
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          push="false"
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ]; then push="true"; fi
+          {
+            echo "short_sha=${short_sha}"
+            echo "version=1.0.${GITHUB_RUN_NUMBER}"
+            echo "image=${IMAGE_NAME}:sha-${short_sha}"
+            echo "push=${push}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=sha-${{ steps.vars.outputs.short_sha }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build (and push on main) the Docker image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ env.APP_DIR }}
+          file: ${{ env.APP_DIR }}/Dockerfile
+          push: ${{ steps.vars.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.vars.outputs.version }}
+            GIT_SHA=${{ steps.vars.outputs.short_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Write build-info.txt
+        env:
+          IMAGE: ${{ steps.vars.outputs.image }}
+          VERSION: ${{ steps.vars.outputs.version }}
+          PUSHED: ${{ steps.vars.outputs.push }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mkdir -p build
+          {
+            echo "Application : session16-cicd-demo"
+            echo "Version     : ${VERSION}"
+            echo "Commit      : ${GITHUB_SHA}"
+            echo "Branch/Ref  : ${GITHUB_REF}"
+            echo "Event       : ${GITHUB_EVENT_NAME}"
+            echo "Run         : ${GITHUB_RUN_ID} (attempt ${GITHUB_RUN_ATTEMPT})"
+            echo "Built at    : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Image       : ${IMAGE}"
+            echo "Pushed      : ${PUSHED}"
+            echo "Digest      : ${DIGEST}"
+            echo "Tags        :"
+            while IFS= read -r tag; do echo "  - ${tag}"; done <<< "${TAGS}"
+          } > build/build-info.txt
+          cat build/build-info.txt
+          {
+            echo "### Docker image"
+            echo '```text'
+            cat build/build-info.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build info artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-info
+          path: ${{ env.APP_DIR }}/build/build-info.txt
+          retention-days: 7
+
+  # ----------------------------------------------------------------- CD: deploy
+  deploy:
+    name: Deploy to Kubernetes (development)
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: development
+    permissions:
+      contents: read
+      packages: read # pull the image that the build job pushed
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}
+      CLUSTER_NAME: session16
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Create kind Kubernetes cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image and load it into the cluster
+        run: |
+          docker pull "${IMAGE}"
+          kind load docker-image "${IMAGE}" --name "${CLUSTER_NAME}"
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Create Kubernetes Secret from repository secret
+        env:
+          DEMO_API_KEY: ${{ secrets.DEMO_API_KEY }}
+        run: |
+          if [ -z "${DEMO_API_KEY}" ]; then
+            echo "::warning title=DEMO_API_KEY not set::Repository secret DEMO_API_KEY is empty; skipping the Kubernetes Secret (the Deployment marks it optional)."
+            exit 0
+          fi
+          # Never echo the value. GitHub also masks it automatically in logs.
+          echo "DEMO_API_KEY received from GitHub Secrets (length: ${#DEMO_API_KEY} characters, value hidden)."
+          kubectl create secret generic session16-demo-secret \
+            --from-literal=api-key="${DEMO_API_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl get secret session16-demo-secret
+
+      - name: Apply Kubernetes manifests
+        run: |
+          sed "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/service.yaml
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/session16-cicd-demo --timeout=180s
+
+      - name: Smoke test the deployed application
+        run: |
+          kubectl port-forward service/session16-cicd-demo 8080:80 > /tmp/port-forward.log 2>&1 &
+          PF_PID=$!
+          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null; then break; fi
+            echo "Waiting for port-forward... (${i})"
+            sleep 2
+          done
+
+          echo "GET /health"
+          curl -fsS http://127.0.0.1:8080/health | tee /tmp/health.json
+          echo
+          grep -q '"status":"ok"' /tmp/health.json
+
+          echo "GET /"
+          curl -fsS http://127.0.0.1:8080/ | tee /tmp/index.html
+          echo
+          grep -q "${GITHUB_SHA::7}" /tmp/index.html
+
+          echo "GET /api/convert?category=length&value=5&from=km&to=m"
+          curl -fsS "http://127.0.0.1:8080/api/convert?category=length&value=5&from=km&to=m"
+          echo
+
+          echo "DEMO_API_KEY length seen inside the pod:"
+          kubectl exec deployment/session16-cicd-demo -- \
+            python -c "import os; print(len(os.environ.get('DEMO_API_KEY', '')))"
+
+      - name: Show deployed resources
+        if: always()
+        run: |
+          kubectl get all -l app=session16-cicd-demo -o wide
+          kubectl get all -o wide
+
+      - name: Debug information on failure
+        if: failure()
+        run: |
+          kubectl describe deployment session16-cicd-demo || true
+          kubectl describe pods -l app=session16-cicd-demo || true
+          kubectl logs -l app=session16-cicd-demo --tail=100 || true
+          cat /tmp/port-forward.log || true
+
+      - name: Write deployment summary
+        if: success()
+        run: |
+          {
+            echo "### Deployment - development"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Cluster | kind \`${CLUSTER_NAME}\` |"
+            echo "| Image | \`${IMAGE}\` |"
+            echo "| Replicas ready | $(kubectl get deployment session16-cicd-demo -o jsonpath='{.status.readyReplicas}')/2 |"
+            echo "| Smoke test | /health, /, /api/convert passed |"
+            echo ""
+            echo '```text'
+            kubectl get pods,svc -l app=session16-cicd-demo -o wide
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
