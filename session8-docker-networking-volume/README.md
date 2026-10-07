@@ -379,6 +379,28 @@ ping: bad address "database"
 
 ![Ping tests showing connectivity and cross-network isolation](image-1.png)
 
+#### Full connectivity matrix, re-run on a native Linux Docker host (WSL)
+
+The first run only screenshotted two of the pings. To show every direction, I rebuilt the
+same topology on the Docker engine inside WSL Ubuntu: three networks, the backend attached
+to its own network plus the frontend and database networks, and MySQL as the database.
+
+![Three networks and three tiers; backend on two extra networks](image-13.png)
+
+![Connectivity matrix: who can reach whom](image-14.png)
+
+| From → To | Result | Why |
+| --- | --- | --- |
+| frontend → backend | **reachable**, 0% loss | both are on `s8-frontend-net` |
+| backend → frontend | **reachable**, 0% loss | same network, both ways |
+| backend → database | **reachable**, 0% loss | both are on `s8-database-net` |
+| frontend → database | **`bad address 's8-database'`** | no shared network, so Docker's DNS won't even resolve the name |
+| frontend → database:3306 | **blocked** | isolation holds for TCP too, not just ping |
+
+`docker inspect` shows the backend holds **one IP per network** (172.20.0.2, 172.21.0.2,
+172.19.0.3). It is effectively a router between the tiers, while the frontend can never talk
+to the database directly: the classic three-tier isolation.
+
 ### Task 2 — Apache on the host network
 
 ```
@@ -403,6 +425,23 @@ port mappings. `curl http://localhost:80` from Windows then fails with
 `Unable to connect to the remote server`, which is the PowerShell wording of the same
 connection refusal explained above.
 
+
+### Host networking on a real Linux host (WSL)
+
+Docker Desktop's VM hides host networking from Windows, so I repeated Task 2 on the Docker
+engine that runs **directly in WSL Ubuntu**, a native Linux host where `--network host`
+behaves as taught:
+
+![Apache with --network host answering on port 80 of the Linux host](image-15.png)
+
+- `docker ps` shows **no port mappings**, and `docker inspect` shows `network mode: host`.
+- `ss -tln` on the **host** shows something listening on `*:80`: Apache bound straight onto
+  the host's network stack.
+- `curl http://localhost:80/` on the host returns **`It works! Apache httpd`**, HTTP 200,
+  with no `-p 80:80` needed.
+- Inside the container, `/proc/net/route` shows `eth0` with the host's default gateway: the
+  container sees the host's real interfaces, which is exactly the loss of isolation the
+  comparison table below warns about.
 
 ### Reaching Apache on port 80 — the working version
 
