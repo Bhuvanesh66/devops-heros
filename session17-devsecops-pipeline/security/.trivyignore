@@ -1,0 +1,8 @@
+# Trivy ignore file used by both the SCA (filesystem) and image scans.
+#
+# Format: one vulnerability ID per line, optionally with an expiry date, e.g.
+#   CVE-2024-12345 exp:2026-12-31
+#
+# Policy: only add an entry after reviewing the finding, with a comment that
+# explains why it does not apply and who accepted the risk. The list is empty
+# on purpose: the current build has no accepted HIGH/CRITICAL exceptions.

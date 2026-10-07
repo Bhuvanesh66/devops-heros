@@ -1,0 +1,5 @@
+# Paths Semgrep should not scan (generated or third-party code).
+node_modules/
+coverage/
+dist/
+reports/

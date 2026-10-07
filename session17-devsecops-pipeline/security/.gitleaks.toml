@@ -1,0 +1,18 @@
+# Gitleaks configuration for the Session 17 DevSecOps pipeline.
+# Start from the full built-in rule set (AWS keys, GitHub tokens, private keys,
+# JWTs, Slack tokens, generic API keys, ...) and only add a narrow allowlist.
+title = "session17-devsecops-pipeline gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated or third-party files that are never committed"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)coverage/''',
+  '''(^|/)dist/''',
+  '''(^|/)reports/''',
+  # The lockfile only contains integrity hashes (sha512-...), not secrets.
+  '''(^|/)package-lock\.json$''',
+]

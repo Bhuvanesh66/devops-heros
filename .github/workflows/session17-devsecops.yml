@@ -1,0 +1,570 @@
+# Session 17 - Complete CI/CD + DevSecOps pipeline
+# Author: Bhuvanesh M S (24bcs10134)
+#
+# Code -> Build -> Unit Test -> SAST -> SCA -> Secret Scan -> Docker Build
+#      -> Container Image Scan -> Security Gate -> Push Image -> Deploy to Kubernetes
+#
+# Every scanner runs in "report only" mode and uploads a JSON report.
+# The security-gate job is the single place that decides PASS/FAIL
+# (policy in session17-devsecops-pipeline/security/gate.js).
+# The image tar that was scanned is the exact image that is pushed and deployed.
+
+name: Session 17 - DevSecOps Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "session17-devsecops-pipeline/**"
+      - ".github/workflows/session17-devsecops.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "session17-devsecops-pipeline/**"
+      - ".github/workflows/session17-devsecops.yml"
+  workflow_dispatch:
+
+# Default for every job; jobs that need more ask for it explicitly.
+permissions:
+  contents: read
+
+concurrency:
+  group: session17-devsecops-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_DIR: session17-devsecops-pipeline
+  IMAGE_NAME: ghcr.io/bhuvanesh66/session17-devsecops-api
+  NODE_VERSION: "22"
+  SEMGREP_IMAGE: semgrep/semgrep:1.179.0
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1
+  TRIVY_VERSION: v0.75.0
+
+defaults:
+  run:
+    shell: bash
+    working-directory: session17-devsecops-pipeline
+
+jobs:
+  # ---------------------------------------------------------------- 1. BUILD
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: session17-devsecops-pipeline/package-lock.json
+
+      - name: Install dependencies (exact versions from lockfile)
+        run: npm ci --no-audit --no-fund
+
+      - name: Build application
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-dist
+          path: session17-devsecops-pipeline/dist/
+          retention-days: 7
+
+  # ------------------------------------------------------------ 2. UNIT TEST
+  unit-test:
+    name: Unit Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: session17-devsecops-pipeline/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run unit tests with coverage
+        run: npm run test:ci
+
+      - name: Write test summary
+        if: always()
+        run: node scripts/test-summary.js
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: |
+            session17-devsecops-pipeline/reports/junit.xml
+            session17-devsecops-pipeline/coverage/
+          retention-days: 7
+
+  # ------------------------------------------------------------------ 3. SAST
+  sast:
+    name: SAST (Semgrep)
+    needs: unit-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to the Security > Code scanning tab
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Run Semgrep (report only, the gate decides)
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p "$APP_DIR/reports"
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src "$SEMGREP_IMAGE" \
+            semgrep scan --metrics=off \
+              --config p/javascript \
+              --config p/nodejsscan \
+              --config "$APP_DIR/security/semgrep-rules.yml" \
+              --json-output "$APP_DIR/reports/semgrep.json" \
+              --sarif-output "$APP_DIR/reports/semgrep.sarif" \
+              "$APP_DIR"
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        continue-on-error: true # code scanning is a nice-to-have view; the gate is the decision
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: session17-devsecops-pipeline/reports/semgrep.sarif
+          category: semgrep
+
+      - name: Upload SAST report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-sast
+          path: |
+            session17-devsecops-pipeline/reports/semgrep.json
+            session17-devsecops-pipeline/reports/semgrep.sarif
+          retention-days: 14
+
+  # ------------------------------------------------------------------- 4. SCA
+  sca:
+    name: SCA (npm audit + Trivy fs)
+    needs: sast
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: npm audit (all dependencies, from package-lock.json)
+        run: |
+          mkdir -p reports
+          # npm audit exits non-zero when it finds anything; keep the report, let the gate decide.
+          npm audit --json > reports/npm-audit.json || true
+          npm audit --audit-level=high || true
+
+      - name: Trivy filesystem scan (JSON report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: fs
+          scan-ref: session17-devsecops-pipeline
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: session17-devsecops-pipeline/security/.trivyignore
+          format: json
+          output: session17-devsecops-pipeline/reports/trivy-fs.json
+          exit-code: "0"
+
+      - name: Trivy filesystem scan (table for the log)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          scan-type: fs
+          scan-ref: session17-devsecops-pipeline
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: session17-devsecops-pipeline/security/.trivyignore
+          format: table
+          exit-code: "0"
+
+      - name: Upload SCA reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-sca
+          path: |
+            session17-devsecops-pipeline/reports/npm-audit.json
+            session17-devsecops-pipeline/reports/trivy-fs.json
+          retention-days: 14
+
+  # ----------------------------------------------------------- 5. SECRET SCAN
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    needs: sca
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Scoped to this project on purpose: other folders of this course repo contain
+      # intentionally fake demo secrets (e.g. Kubernetes Secret examples).
+      - name: Gitleaks - current files
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p "$APP_DIR/reports"
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo" "$GITLEAKS_IMAGE" \
+            dir "/repo/$APP_DIR" \
+            --config "/repo/$APP_DIR/security/.gitleaks.toml" \
+            --report-format json --report-path "/repo/$APP_DIR/reports/gitleaks-dir.json" \
+            --redact --verbose --no-banner --exit-code 0
+
+      - name: Gitleaks - git history of this project
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo" "$GITLEAKS_IMAGE" \
+            git /repo \
+            --log-opts="HEAD -- $APP_DIR .github/workflows/session17-devsecops.yml" \
+            --config "/repo/$APP_DIR/security/.gitleaks.toml" \
+            --report-format json --report-path "/repo/$APP_DIR/reports/gitleaks-git.json" \
+            --redact --verbose --no-banner --exit-code 0
+
+      - name: Upload secret scan reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-secrets
+          path: session17-devsecops-pipeline/reports/gitleaks-*.json
+          retention-days: 14
+
+  # ---------------------------------------------------------- 6. DOCKER BUILD
+  docker-build:
+    name: Docker Build
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    outputs:
+      image-id: ${{ steps.meta.outputs.image-id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image to a tar file (not pushed yet)
+        uses: docker/build-push-action@v7
+        with:
+          context: session17-devsecops-pipeline
+          file: session17-devsecops-pipeline/Dockerfile
+          push: false
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          cache-from: type=gha,scope=session17
+          cache-to: type=gha,mode=max,scope=session17
+
+      - name: Load image and record its ID
+        id: meta
+        run: |
+          docker load --input "$RUNNER_TEMP/image.tar"
+          IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE_NAME:$GITHUB_SHA")
+          echo "image-id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
+          docker image ls "$IMAGE_NAME"
+          echo "Built $IMAGE_NAME:$GITHUB_SHA ($IMAGE_ID)"
+
+      - name: Smoke test the container
+        run: |
+          docker run -d --name smoke --read-only --cap-drop ALL -p 3000:3000 "$IMAGE_NAME:$GITHUB_SHA"
+          for _ in $(seq 1 20); do
+            if curl -fsS http://localhost:3000/health; then echo; break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:3000/health
+          echo
+          echo "Container runs as: $(docker exec smoke id)"
+          docker rm -f smoke
+
+      - name: Upload image tar
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}/image.tar
+          retention-days: 1
+
+  # ---------------------------------------------------- 7. CONTAINER IMAGE SCAN
+  image-scan:
+    name: Container Image Scan (Trivy)
+    needs: docker-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download image tar
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}
+
+      - name: Trivy image scan (JSON report for the gate)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          input: ${{ runner.temp }}/image.tar
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: session17-devsecops-pipeline/security/.trivyignore
+          format: json
+          output: session17-devsecops-pipeline/reports/trivy-image.json
+          exit-code: "0"
+
+      - name: Trivy image scan (table for the log, all severities)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          input: ${{ runner.temp }}/image.tar
+          scanners: vuln,secret
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          trivyignores: session17-devsecops-pipeline/security/.trivyignore
+          format: table
+          exit-code: "0"
+
+      - name: Trivy image scan (SARIF for code scanning)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          input: ${{ runner.temp }}/image.tar
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          limit-severities-for-sarif: true
+          trivyignores: session17-devsecops-pipeline/security/.trivyignore
+          format: sarif
+          output: session17-devsecops-pipeline/reports/trivy-image.sarif
+          exit-code: "0"
+
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          input: ${{ runner.temp }}/image.tar
+          format: cyclonedx
+          output: session17-devsecops-pipeline/reports/sbom.cdx.json
+          exit-code: "0"
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: session17-devsecops-pipeline/reports/trivy-image.sarif
+          category: trivy-image
+
+      - name: Upload image scan reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-image
+          path: |
+            session17-devsecops-pipeline/reports/trivy-image.json
+            session17-devsecops-pipeline/reports/trivy-image.sarif
+            session17-devsecops-pipeline/reports/sbom.cdx.json
+          retention-days: 14
+
+  # --------------------------------------------------------- 8. SECURITY GATE
+  security-gate:
+    name: Security Gate
+    needs: [sast, sca, secret-scan, image-scan]
+    # Run even when an earlier job failed, so the summary always shows what happened.
+    # A missing report counts as FAIL, so this can never "pass by accident".
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download all scan reports
+        continue-on-error: true # a missing report is handled (as FAIL) by the gate itself
+        uses: actions/download-artifact@v8
+        with:
+          pattern: reports-*
+          path: session17-devsecops-pipeline/reports
+          merge-multiple: true
+
+      - name: List reports
+        run: ls -la reports || true
+
+      - name: Evaluate security policy
+        run: node security/gate.js reports
+
+      - name: Upload gate result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-gate-result
+          path: |
+            session17-devsecops-pipeline/reports/gate-summary.md
+            session17-devsecops-pipeline/reports/gate-result.json
+          retention-days: 14
+
+  # ------------------------------------------------------------ 9. PUSH IMAGE
+  push-image:
+    name: Push Image (GHCR)
+    needs: [docker-build, security-gate]
+    # Only publish from main, never from pull requests.
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download the scanned image tar
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}
+
+      - name: Load image and verify it is the one that was scanned
+        working-directory: ${{ runner.temp }}
+        env:
+          EXPECTED_ID: ${{ needs.docker-build.outputs.image-id }}
+        run: |
+          docker load --input image.tar
+          ACTUAL_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE_NAME:$GITHUB_SHA")
+          echo "expected: $EXPECTED_ID"
+          echo "actual:   $ACTUAL_ID"
+          test "$ACTUAL_ID" = "$EXPECTED_ID"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (commit SHA + latest)
+        working-directory: ${{ runner.temp }}
+        run: |
+          docker push "$IMAGE_NAME:$GITHUB_SHA" | tee push.log
+          docker push "$IMAGE_NAME:latest"
+          DIGEST=$(grep -o 'digest: sha256:[0-9a-f]*' push.log | head -n1 | cut -d' ' -f2)
+          {
+            echo "## Image pushed to GHCR"
+            echo ""
+            echo "| Tag | Reference |"
+            echo "|---|---|"
+            echo "| commit | \`$IMAGE_NAME:$GITHUB_SHA\` |"
+            echo "| latest | \`$IMAGE_NAME:latest\` |"
+            echo "| digest | \`$IMAGE_NAME@$DIGEST\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------- 10. DEPLOY TO KUBERNETES
+  deploy:
+    name: Deploy to Kubernetes (kind)
+    needs: push-image
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download the scanned image tar
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: session17
+
+      # The GHCR package is private by default, so instead of giving the cluster
+      # registry credentials the exact scanned image is side-loaded into the node.
+      - name: Load the image into the cluster
+        run: |
+          kind load image-archive "$RUNNER_TEMP/image.tar" --name session17
+          docker exec session17-control-plane crictl images | grep session17-devsecops-api
+
+      - name: Pin the manifests to this commit's image
+        run: |
+          sed -i "s/newTag: .*/newTag: ${GITHUB_SHA}/" k8s/kustomization.yaml
+          kubectl kustomize k8s
+
+      - name: Apply manifests
+        run: kubectl apply -k k8s
+
+      - name: Wait for rollout
+        run: kubectl -n session17 rollout status deployment/notes-api --timeout=180s
+
+      - name: Smoke test through the Service
+        run: |
+          kubectl -n session17 port-forward svc/notes-api 8080:80 > /tmp/port-forward.log 2>&1 &
+          PF_PID=$!
+          trap 'kill $PF_PID' EXIT
+          for _ in $(seq 1 20); do
+            if curl -fsS http://localhost:8080/health > /dev/null; then break; fi
+            sleep 1
+          done
+          echo "GET /health"
+          curl -fsS http://localhost:8080/health; echo
+          echo "POST /api/notes"
+          curl -fsS -X POST http://localhost:8080/api/notes \
+            -H 'Content-Type: application/json' \
+            -d '{"title":"deployed by GitHub Actions","body":"session 17"}'; echo
+          echo "GET /api/notes"
+          curl -fsS http://localhost:8080/api/notes; echo
+
+      - name: Show deployed resources
+        if: always()
+        run: |
+          kubectl -n session17 get all -o wide
+          kubectl -n session17 get networkpolicy
+          kubectl -n session17 get deployment notes-api \
+            -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+          {
+            echo "## Deployed to Kubernetes (kind)"
+            echo ""
+            echo '```'
+            kubectl -n session17 get deploy,pods,svc -o wide
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          kubectl -n session17 describe deployment notes-api || true
+          kubectl -n session17 describe pods || true
+          kubectl -n session17 get events --sort-by=.lastTimestamp || true
+          kubectl -n session17 logs -l app.kubernetes.io/name=notes-api --tail=50 || true

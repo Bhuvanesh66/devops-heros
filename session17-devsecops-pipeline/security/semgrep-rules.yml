@@ -1,0 +1,107 @@
+# Custom Semgrep rules for the Session 17 Notes API.
+# They run on top of the public registry rulesets (p/javascript, p/nodejsscan)
+# and encode project-specific policy. Severity ERROR is treated as HIGH by the
+# security gate (security/gate.js); WARNING is reported but does not fail.
+rules:
+  - id: s17-no-eval
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      Dynamic code execution (eval / new Function / vm.runIn*) turns any user
+      input that reaches it into remote code execution. Use a parser or a
+      lookup table instead.
+    metadata:
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      category: security
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: Function(...)
+      - pattern: require('vm').$RUN(...)
+      - pattern: |
+          $VM = require('vm');
+          ...
+          $VM.$RUN(...);
+
+  - id: s17-child-process-shell-injection
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      child_process exec/execSync run through a shell. Building the command
+      from a template literal or string concatenation allows command
+      injection. Use execFile/spawn with a fixed binary and an argument array.
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+      category: security
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-inside: |
+                  $CP = require('child_process');
+                  ...
+              - pattern-either:
+                  - pattern: $CP.$EXEC(`...${$X}...`, ...)
+                  - pattern: $CP.$EXEC($A + $B, ...)
+          - patterns:
+              - pattern-inside: |
+                  const { ..., $EXEC, ... } = require('child_process');
+                  ...
+              - pattern-either:
+                  - pattern: $EXEC(`...${$X}...`, ...)
+                  - pattern: $EXEC($A + $B, ...)
+          - pattern: require('child_process').$EXEC(`...${$X}...`, ...)
+          - pattern: require('child_process').$EXEC($A + $B, ...)
+      - metavariable-regex:
+          metavariable: $EXEC
+          regex: ^(exec|execSync)$
+
+  - id: s17-hardcoded-credential
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      A credential-looking variable is assigned a string literal. Secrets must
+      come from the environment (process.env) or a secret manager, never from
+      source code.
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: const $NAME = "$VALUE";
+          - pattern: let $NAME = "$VALUE";
+          - pattern: var $NAME = "$VALUE";
+          - pattern: "{..., $NAME: \"$VALUE\", ...}"
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i)^.*(secret|passw(or)?d|api_?key|access_?key|private_?key|auth_?token|jwt_?key).*$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: ^.{8,}$
+
+  - id: s17-jwt-hardcoded-secret
+    languages: [javascript]
+    severity: ERROR
+    message: >-
+      jsonwebtoken is called with a hard-coded signing secret. Load the key
+      from process.env or a secret manager.
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      category: security
+    pattern-either:
+      - pattern: $JWT.sign($PAYLOAD, "...", ...)
+      - pattern: $JWT.verify($TOKEN, "...", ...)
+
+  - id: s17-express-error-leaks-stack
+    languages: [javascript]
+    severity: WARNING
+    message: >-
+      Sending err.stack (or the raw error) to the client leaks internal
+      details. Log it server-side and return a generic message.
+    metadata:
+      cwe: "CWE-209: Generation of Error Message Containing Sensitive Information"
+      category: security
+    pattern-either:
+      - pattern: $RES.send($ERR.stack)
+      - pattern: "$RES.json({..., $K: $ERR.stack, ...})"
+      - pattern: $RES.status($S).send($ERR.stack)
+      - pattern: "$RES.status($S).json({..., $K: $ERR.stack, ...})"

@@ -1,0 +1,36 @@
+# Default-deny for the namespace, then allow only what the API needs:
+#   ingress: TCP 3000 (HTTP)
+#   egress:  DNS only (the API makes no outbound calls)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: session17
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notes-api-allow-http
+  namespace: session17
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notes-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

@@ -1,0 +1,51 @@
+{
+  "name": "session17-devsecops-api",
+  "version": "1.0.0",
+  "description": "Notes REST API used to demonstrate a complete CI/CD + DevSecOps pipeline (Session 17)",
+  "main": "src/server.js",
+  "private": true,
+  "license": "MIT",
+  "author": "Bhuvanesh M S (24bcs10134)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "build": "node scripts/build.js",
+    "test": "jest --coverage",
+    "test:ci": "jest --coverage --ci --reporters=default --reporters=jest-junit",
+    "gate": "node security/gate.js reports"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "helmet": "8.3.0"
+  },
+  "devDependencies": {
+    "jest": "30.5.2",
+    "jest-junit": "17.0.0",
+    "supertest": "7.3.1"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "json-summary"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 80,
+        "branches": 70
+      }
+    }
+  },
+  "jest-junit": {
+    "outputDirectory": "reports",
+    "outputName": "junit.xml"
+  }
+}

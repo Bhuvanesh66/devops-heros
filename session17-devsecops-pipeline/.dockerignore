@@ -1,0 +1,18 @@
+# Only package.json, package-lock.json and src/ are needed in the image.
+node_modules
+npm-debug.log*
+coverage
+dist
+reports
+tests
+scripts
+k8s
+security
+*.md
+Dockerfile
+.dockerignore
+.gitignore
+.git
+.env
+.env.*
+*.tar
