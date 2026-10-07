@@ -717,6 +717,103 @@ cluster's own plumbing — `kube-proxy` and the CNI — ships as DaemonSets.
 
 ---
 
+# Part 7 — The four deployment strategies (Task 1)
+
+All four were run with the class manifests in [01-rolling-update/](01-rolling-update),
+[02-blue-green/](02-blue-green), [03-canary/](03-canary) and [04-recreate/](04-recreate),
+unchanged. Each nginx page shows its version, so `curl` on the NodePort shows which version is
+serving.
+
+| Strategy | Old and new run together? | Downtime | Rollback | Extra capacity | Traffic split |
+| --- | --- | --- | --- | --- | --- |
+| **RollingUpdate** | Yes, briefly, Pod by Pod | None (if probes are right) | `kubectl rollout undo` | `maxSurge` extra Pods | Gradual, not controllable |
+| **Blue-Green** | Yes, both fully deployed | None | Switch the Service back, instant | **2×** | All or nothing |
+| **Canary** | Yes | None | Scale the canary to 0 | A few extra Pods | Proportional to Pod count |
+| **Recreate** | **Never** | **Yes** (measured below: ~7 s) | Re-deploy the old version | None | n/a |
+
+## Strategy 1: RollingUpdate
+
+![RollingUpdate v1 to v2 with maxSurge 1 and maxUnavailable 0](images/26-rolling-update.png)
+
+- `maxSurge: 1, maxUnavailable: 0`: at most **one extra** Pod, and **never fewer than 4
+  ready**. v1 was 4 × `nginx:1.24-alpine` serving `VERSION: v1`.
+- `kubectl apply -f deployment-v2.yaml` rolled through `1 → 2 → 3 → 4 out of 4 new replicas`.
+  Afterwards the old ReplicaSet `86d7d44d5b` is at **0** and the new `56bff6d88c` is at
+  **4**, all `nginx:1.25-alpine` serving `VERSION: v2`. The old ReplicaSet is kept (at 0) so
+  that `rollout undo` can scale it back up.
+
+![The controller's scaling events: one new Pod up, one old Pod down, repeated](images/26b-rolling-events.png)
+
+The most recent events, from `67s` ago down to `4s`, show the exact algorithm: new RS 0→1,
+then old 4→3 and new 1→2, old 3→2 and new 2→3, old 2→1 and new 3→4, and finally old 1→0.
+(The older lines, 8-9 minutes ago, are from an earlier attempt on the same Deployment
+name.)
+
+## Strategy 2: Blue-Green
+
+![Blue and green both running; the Service selector is the switch](images/27-blue-green.png)
+
+- Both versions run **fully** at the same time: 3 `blue` Pods (v1) and 3 `green` Pods (v2).
+- The Service selector is `{"app":"myapp","slot":"blue"}`, so 4 out of 4 requests return
+  `BLUE ENVIRONMENT Version: v1`.
+- **The switch:** `kubectl apply -f service-green.yaml` changes only the selector to
+  `slot: green`. The next 4 requests all return `GREEN ENVIRONMENT Version: v2`: 100% of
+  traffic moved in one step, with no Pods restarted.
+- **Rollback** is the same operation in reverse (`service-blue.yaml`), and BLUE answered
+  again immediately, because the blue Pods never went away. That instant rollback is what
+  you pay for with double capacity.
+
+## Strategy 3: Canary
+
+![9 stable + 1 canary: 16 of 200 requests hit v2; then 5 + 5: exactly 100/100](images/28-canary.png)
+
+- One Service selects the label shared by both Deployments (`app: myapp-canary`), so
+  kube-proxy spreads requests over all **10** Pods: 9 stable (v1) and 1 canary (v2).
+- **200 real requests:** **16 hit the canary (8%)** and 184 hit stable. That's close to the
+  expected 10%; kube-proxy picks endpoints at random, so the split is statistical, not exact.
+- After promoting to 5 canary + 5 stable: **100 / 100**.
+- The limitation: the traffic share can only change in steps of whole Pods. Exact splits like
+  1%, or routing by header or cookie, need an Ingress controller or service mesh with weighted
+  routing (e.g. Argo Rollouts, Istio, or ingress-nginx canary annotations).
+
+## Strategy 4: Recreate
+
+![Recreate: all v1 Pods terminate before any v2 Pod is created](images/29-recreate.png)
+
+With `strategy: type: Recreate`, applying v2 showed all three v1 Pods `Terminating`, then
+`Completed`, and **only then** three v2 Pods going `Pending → ContainerCreating`. Two
+versions never run at the same time. That's the point of Recreate, for apps that can't run
+two versions side by side (database schema changes, a single-writer volume, licensing).
+
+![Measuring the downtime gap](images/30-recreate-downtime.png)
+
+The price, measured: polling the NodePort every 0.5 s during a Recreate rollout gave
+`HTTP 200`, then **7 consecutive failures (HTTP 000, from 13:09:07)**, then `HTTP 200` again
+from 13:09:14: **about 7 seconds with no Pods to serve traffic**. The same change under
+RollingUpdate gives zero failed requests.
+
+---
+
+# Part 8 — The remaining pod-lifecycle YAMLs (Pending, Failed, ImagePullBackOff)
+
+Part 1 used my own 12 files. Three of the class lab's files in
+[pod-lifecycle/instructor-lab/](pod-lifecycle/instructor-lab) show phases those didn't reach,
+so I ran them as well:
+
+![Pending, Failed and ErrImagePull Pods from the instructor lab](images/31-lifecycle-pending-failed-image.png)
+
+| File | Phase / status | Why | Evidence |
+| --- | --- | --- | --- |
+| `02-pending.yaml` | **Pending**, no node, no IP | Requests `memory: 9Gi`; the node has about 3.5Gi | `FailedScheduling: 0/1 nodes are available: 1 Insufficient memory` |
+| `04-failed.yaml` | **Failed** (`Error`, exit code 1) | `restartPolicy: Never` + the script runs `exit 1` | `phase=Failed reason=Error exitCode=1`; logs `Task started`, `Task failed` |
+| `06-imagepullbackoff.yaml` | **ErrImagePull** → ImagePullBackOff | The image `jakwehrgkaejw:kahsdfgkhj` doesn't exist | `failed to resolve reference "docker.io/library/jakwehrgkaejw..."` |
+
+Together with Part 1, this covers every Pod phase: **Pending, Running, Succeeded, Failed**
+(Unknown only happens when a node stops reporting), plus the common waiting reasons
+`ContainerCreating`, `ErrImagePull` / `ImagePullBackOff` and `CrashLoopBackOff`.
+
+---
+
 ## Summary
 
 | Homework item | Status |
@@ -729,4 +826,9 @@ cluster's own plumbing — `kube-proxy` and the CNI — ships as DaemonSets.
 | `troubleshooting/broken-image.yaml` (+ on a live Deployment) | Done — Part 5 |
 | 4-revision history, rollback V4 → V1 with `--to-revision` | Done — Part 4 |
 | ReplicaSet vs Deployment | Done — Part 6 Q1 |
+| Task 1: RollingUpdate with the class manifests, old/new Pods verified | Done — Part 7 |
+| Task 1: Blue-Green: both versions, Service switch, instant rollback | Done — Part 7 |
+| Task 1: Canary: 9+1 Pods, 16/200 requests to the canary, then 50/50 | Done — Part 7 |
+| Task 1: Recreate: old Pods terminated first, ~7 s downtime measured | Done — Part 7 |
+| Task 2: lab Pending / Failed / ImagePullBackOff YAMLs | Done — Part 8 |
 | StatefulSet vs DaemonSet vs Deployment (research) | Done — Part 6 Q2 |
