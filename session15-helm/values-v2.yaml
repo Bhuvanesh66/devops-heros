@@ -1,0 +1,6 @@
+# Upgrade 1: scale out and publish page v2
+replicaCount: 3
+page:
+  version: "v2"
+  color: "#2f855a"
+  message: "Upgraded with -f values-v2.yaml (3 replicas)"

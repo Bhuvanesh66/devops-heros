@@ -1,0 +1,8 @@
+# Upgrade 2: new nginx image and page v3 - the release we will roll back from
+replicaCount: 3
+image:
+  tag: "1.28-alpine"
+page:
+  version: "v3"
+  color: "#c53030"
+  message: "Upgraded with -f values-v3.yaml (new image nginx:1.28-alpine)"
