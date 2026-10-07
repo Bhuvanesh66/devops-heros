@@ -119,6 +119,35 @@ cat original.txt
 patterns (`/opt/app/current -> /opt/app/releases/v1.4.2`), for `/etc/nginx/sites-enabled`,
 and for `alternatives`-managed binaries such as `java` or `python`.
 
+### Interview answer (the 30-second version)
+
+> *"A hard link is another directory entry for the same inode, so it is the same file under a
+> second name. Deleting either name leaves the data intact until the link count reaches zero.
+> A soft link is a separate small file whose content is a path. It can point at directories
+> and across filesystems, but it breaks if the target is moved or deleted. I'd use a symlink
+> for things like `current -> releases/v2` deployments, and a hard link when I want a second
+> name that survives the original being removed, as in backup tools like `rsync --link-dest`."*
+
+The three follow-up questions interviewers usually ask, all tested live below:
+
+1. **Can you hard-link a directory?** No: `hard link not allowed for directory`. A directory
+   hard link could create a loop in the tree, which would break tools like `find` and `du`.
+2. **Can a hard link cross filesystems?** No: `Invalid cross-device link`. An inode number
+   only means something inside its own filesystem. Here `/home` is ext4 and `/mnt/c` is the
+   Windows drive, so the hard link fails while the symlink to the same place works.
+3. **How do you find every name of one file?** `find . -samefile app.conf`, or `ls -i` /
+   `stat` to compare inode numbers.
+
+![Hard vs soft links: inode check, directory and cross-filesystem edge cases](images/01-links-interview.png)
+
+- `stat` shows `app.conf` and `app.conf.hard` on the **same inode (143) with links=2**. The
+  soft link has its own inode (2893), `type=symbolic link`, and `size=8`, the length of the
+  string `app.conf`.
+- `readlink -f` resolves the symlink to its absolute target path.
+- After `rm app.conf`, the hard link still prints `app config v1`, while `cat app.conf.soft`
+  fails. `ls -l` shows the dangling link still pointing at the missing name.
+- Clean-up used plain `rm` for both kinds of link. Deleting a link never touches its target.
+
 ---
 
 ## 2. `adduser` vs `useradd`
@@ -143,21 +172,58 @@ sudo passwd testuser
 sudo adduser testuser
 ```
 
-**Which is the standard/default one?**
-`useradd` is the standard, portable command — it is part of the `shadow-utils` package and
-exists on every Linux distribution, which is why it is the one used in scripts, Dockerfiles
-and configuration-management tools.
+### Which one is preferred on Ubuntu, and why
 
-**Why `adduser` is not preferred:** it is a distribution-specific convenience wrapper, not a
-standard tool. On Debian/Ubuntu it is a friendly interactive script, but on RHEL/CentOS
-`adduser` is merely a symlink to `useradd` and behaves completely differently. Because it is
-interactive by design, it also blocks waiting for input, which breaks unattended automation.
-Portable, repeatable scripts therefore use `useradd`; `adduser` is fine for a human typing at
-a Debian/Ubuntu prompt.
+**On Ubuntu, `adduser` is the preferred command.** Ubuntu's own manual page for `useradd`
+says so directly:
 
-### Creating a test user with the recommended command
+> *"useradd is a low level utility for adding users. On Debian, administrators should usually
+> use adduser(8) instead."*
 
-`useradd` is the recommended command, so the test user was created with it:
+Why Ubuntu prefers it:
+
+- **It applies the distribution's policy for you.** `adduser` reads `/etc/adduser.conf`, then
+  creates the home directory, copies the `/etc/skel` dotfiles, sets `/bin/bash` as the shell,
+  and creates a matching group. Bare `useradd` does none of this unless you remember `-m -s`.
+- **It is harder to get wrong.** A user created with plain `useradd` gets no home directory
+  and a `/bin/sh` shell. This is the most common user-creation mistake on Ubuntu, shown in the
+  comparison below.
+- **It can still be scripted.** `--disabled-password` and `--comment` make it
+  non-interactive, so being a "friendly" tool doesn't stop it from being automated.
+
+Where `useradd` still wins: it is the low-level binary that exists on **every** distribution.
+On RHEL/CentOS, `adduser` is only a symlink to `useradd`. So portable scripts,
+cross-distro Dockerfiles and config-management tools such as Ansible's `user` module call
+`useradd` with explicit flags.
+
+**Rule of thumb:** at an Ubuntu/Debian terminal use `adduser`; in portable automation use
+`useradd -m -s /bin/bash`.
+
+### Creating a test user with the recommended command (`adduser`)
+
+![adduser vs useradd: what Ubuntu's own man page recommends](images/02-adduser-why.png)
+
+- `file` confirms the difference in the first row of the table: `adduser` is a **Perl script**
+  and `useradd` is a compiled **ELF binary** that `adduser` calls underneath.
+
+![Creating the test user devintern with adduser](images/03-adduser-create.png)
+
+- One `adduser` command (exit code 0) produced a complete, usable account: its own group plus
+  membership of `users`, the `DevOps Intern` comment, `/bin/bash` as the shell, and a home
+  directory already populated with `.bashrc`, `.profile` and `.bash_logout` from `/etc/skel`.
+- `passwd -S` shows `L` (locked), because `--disabled-password` was used for a
+  non-interactive demo. `passwd devintern` would set a password and unlock it.
+
+![The same job with bare useradd, and cleaning up both users](images/04-useradd-compare.png)
+
+- The same request through bare `useradd plainuser` gives `/bin/sh` as the shell and **no
+  home directory at all** (`ls` says `No such file or directory`). That is exactly why Ubuntu
+  recommends `adduser`.
+- Both test users were removed afterwards: `deluser --remove-home` for the `adduser` account.
+
+### Earlier attempt with `useradd -m` (kept for reference)
+
+An earlier run created `testuser` with `useradd` and every flag spelled out:
 
 ```bash
 sudo useradd -m -s /bin/bash -c "Test User" testuser
@@ -315,7 +381,110 @@ Key commands reviewed from the session cheat sheet:
 
 Reference PDF included in this folder: [devops1-83.pdf](devops1-83.pdf)
 
-### Practising the commands
+### Purpose and basic usage of each command
+
+| Command | Purpose | Basic usage |
+| --- | --- | --- |
+| `pwd` | Print the current working directory | `pwd` |
+| `ls -la` | List files, including hidden ones, with permissions/owner/size | `ls -la /etc` |
+| `cd` | Change directory (`cd -` goes back, `cd ~` goes home) | `cd /var/log` |
+| `tree` / `find . \| sort` | Show a directory tree (`tree` isn't installed by default) | `find project \| sort` |
+| `touch` | Create an empty file or update its timestamp | `touch app.log` |
+| `mkdir -p` | Create directories, including missing parents | `mkdir -p a/b/c` |
+| `cp -r` | Copy files or whole directories | `cp -r src backup/` |
+| `mv` | Move or rename | `mv app.log app-old.log` |
+| `rm -rf` | Remove files/directories recursively, without prompting (careful) | `rm -rf build/` |
+| `ln` / `ln -s` | Create a hard link / a symbolic link | `ln -s target linkname` |
+| `cat` | Print a whole file | `cat /etc/hostname` |
+| `less` | Page through a long file (`q` quits, `/` searches) | `less /var/log/syslog` |
+| `head -n` / `tail -n` | First / last N lines; `tail -f` follows a growing log | `tail -f app.log` |
+| `wc -l` | Count lines (also `-w` words, `-c` bytes) | `wc -l app.log` |
+| `grep` | Search inside files (`-n` line numbers, `-r` recursive, `-c` count, `-i` ignore case) | `grep -rn ERROR /var/log` |
+| `find` | Search for files by name/type/size/age | `find / -name "*.conf" -type f` |
+| `which` / `type` | Where an executable lives / whether a name is a builtin, alias or file | `which python3` |
+| `chmod` | Change permissions (symbolic `u+x` or octal `640`) | `chmod u+x deploy.sh` |
+| `chown` / `chgrp` | Change file owner / group | `sudo chown www-data: /var/www` |
+| `umask` | Default permission mask for new files | `umask` → `0022` |
+| `sudo` | Run one command as root | `sudo apt update` |
+| `adduser` / `useradd` | Create users (see Task 2) | `sudo adduser alice` |
+| `usermod` / `passwd` | Modify a user (e.g. add to a group) / set a password | `sudo usermod -aG docker alice` |
+| `id` / `whoami` / `groups` | Show the current identity and group membership | `id` |
+| `ps` | Snapshot of processes | `ps -eo pid,user,%mem,comm --sort=-%mem` |
+| `top` / `htop` | Live process and CPU/memory view (`-b -n 1` for a single snapshot) | `top -b -n 1 \| head` |
+| `kill` / `pgrep` | Send a signal to a process / find PIDs by name | `kill %1`, `pgrep -a nginx` |
+| `jobs` / `bg` / `fg` / `&` | Shell job control: background and foreground tasks | `sleep 300 &` then `jobs` |
+| `systemctl` | Start/stop/enable/inspect systemd services | `systemctl status cron` |
+| `journalctl` | Read systemd logs (see Task 3) | `journalctl -u cron -n 20` |
+| `df -h` | Free space per **filesystem** | `df -h /` |
+| `du -sh` | Space used by a **directory** | `du -sh ~/projects` |
+| `free -h` | RAM and swap usage | `free -h` |
+| `lsblk` | List block devices (disks, partitions) | `lsblk` |
+| `uptime` | Time since boot and load averages | `uptime` |
+| `ip a` / `ip -brief addr` | Interfaces and IP addresses | `ip -brief addr` |
+| `ping` | Test reachability and latency | `ping -c 2 8.8.8.8` |
+| `curl` / `wget` | Make HTTP requests / download files | `curl -sI https://github.com` |
+| `ss -tlnp` / `netstat -tulnp` | Listening sockets and the processes behind them | `ss -tln` |
+| `ssh` / `scp` | Remote shell / secure copy | `ssh user@host`, `scp f user@host:/tmp` |
+| `tar -czvf` / `tar -xzf` | Create / extract a gzip archive (`-t` lists contents) | `tar -czvf b.tgz dir/` |
+| `zip` / `unzip` | Create / extract zip files | `unzip site.zip` |
+| `cut` / `sort` / `uniq -c` | Pick columns / sort / count duplicates (a classic pipeline) | `cut -d' ' -f2 f \| sort \| uniq -c` |
+| `awk` | Column-based filtering and reporting | `awk '$2>=500 {print $1}' f` |
+| `sed` | Stream editing, usually find-and-replace | `sed 's/old/new/g' f` |
+| `tr` | Translate or delete characters | `tr 'a-z' 'A-Z'` |
+| `apt` / `dpkg` | Install and query packages on Debian/Ubuntu (`yum`/`dnf`/`rpm` on RHEL) | `sudo apt install curl` |
+| `man` / `--help` / `whatis` | Full manual / quick usage / one-line description | `whatis grep` |
+| `history` | Previously typed commands in an interactive shell | `history \| tail` |
+
+### Practising the commands: one screenshot per category
+
+Every command in the table was run on the WSL Ubuntu machine. The captures below are the real
+output.
+
+![Cheat sheet 1: navigation, files and directories](images/05-cheat-navigation-files.png)
+
+- `mkdir -p project/{src,logs,backup}` used brace expansion to create three directories at once.
+- `mv` renamed the log to include `$(date +%F)`, a common log-rotation pattern.
+
+![Cheat sheet 2: viewing and searching](images/06-cheat-viewing-searching.png)
+
+- `head`/`tail` show the ends of a 21-line log. `grep -n` finds the one `ERROR` line at line 21,
+  and `grep -c` counts the 20 `INFO` lines.
+- `type cd` reports `cd is a shell builtin`: `cd` has no file on disk, which is why `which cd`
+  finds nothing.
+
+![Cheat sheet 3: permissions and users](images/07-cheat-permissions-users.png)
+
+- A new script is `-rw-r--r--`, so running it gives `Permission denied`. After `chmod u+x`
+  it becomes `-rwxr--r--` and runs.
+- `chmod 640` gives the owner read/write, the group read, and others nothing.
+- `umask 0022` is why new files start at `644` and directories at `755`.
+
+![Cheat sheet 4: processes, services, disk and memory](images/08-cheat-processes-system.png)
+
+- `sleep 300 &` became background job `[1]`. `pgrep -a` found its PID, `kill %1` ended it,
+  and `jobs` then reports `Terminated`.
+- `ps --sort=-%mem` shows the minikube control plane (`kube-apiserver`) as the biggest memory
+  user on this machine.
+- `df -h` compares filesystems: the WSL root is 1% used, while the Windows `C:` drive is at
+  100%. That's the difference between `df` (filesystems) and `du` (one directory, 56K here).
+
+![Cheat sheet 5: text processing and archiving](images/09-cheat-text-archive.png)
+
+- `cut | sort | uniq -c` turns a status log into a count per HTTP code: three 200s, one 404, one 500.
+- `awk '$2 >= 500'` prints an alert line only for server errors.
+- `tar -czvf` creates the archive, `-tzvf` lists it without extracting, and `-xzf -C restore`
+  extracts it into another directory.
+
+![Cheat sheet 6: networking, packages and help](images/10-cheat-network-packages-help.png)
+
+- `ip -brief addr` shows `eth0` (WSL's network) and a `br-` bridge on `192.168.49.1`, the
+  Docker network minikube runs on.
+- `apt-cache policy curl` shows the installed version and a newer candidate, which is what
+  `apt upgrade` would install.
+- `whatis` and `--help` are the quickest ways to remember what a command does without opening
+  the full `man` page.
+
+### Earlier practice run
 
 ```bash
 pwd && whoami && date
