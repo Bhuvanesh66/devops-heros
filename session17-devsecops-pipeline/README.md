@@ -338,13 +338,10 @@ The gate exists to **stop** a bad change, so it should be shown failing. On a br
 git switch -c demo/gate-fail
 cd session17-devsecops-pipeline
 
-# 1) A fake hard-coded credential (not a real key)
-cat > src/config.js <<'EOF'
-'use strict';
-// DEMO ONLY - fake credential used to prove the security gate fails.
-const paymentApiKey = 'Xk7Qm2Xv9LrT4bN8cW3zK6hY1sP0';
-module.exports = { paymentApiKey };
-EOF
+# 1) A fake hard-coded credential (not a real key). It is generated on the fly so that no
+#    key-shaped literal is stored in this README - Gitleaks caught exactly that on the first run.
+KEY=$(head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 28)
+printf "'use strict';\nconst paymentApiKey = '%s'; // DEMO ONLY - fake\nmodule.exports = { paymentApiKey };\n" "$KEY" > src/config.js
 
 # 2) A dependency with a known HIGH vulnerability (lodash 4.17.20, command injection CVE-2021-23337)
 npm install lodash@4.17.20 --save-exact

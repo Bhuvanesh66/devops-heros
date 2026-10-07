@@ -242,6 +242,7 @@ jobs:
             git /repo \
             --log-opts="HEAD -- $APP_DIR .github/workflows/session17-devsecops.yml" \
             --config "/repo/$APP_DIR/security/.gitleaks.toml" \
+            --gitleaks-ignore-path "/repo/$APP_DIR/security/.gitleaksignore" \
             --report-format json --report-path "/repo/$APP_DIR/reports/gitleaks-git.json" \
             --redact --verbose --no-banner --exit-code 0
 

@@ -1,0 +1,8 @@
+# Findings reviewed and accepted. Each line is a Gitleaks fingerprint: commit:file:rule:line
+#
+# Commit 5e3d80c put a FAKE demo key in README.md (the "prove the gate fails" instructions).
+# Gitleaks correctly flagged it on the first full pipeline run and the security gate blocked
+# the push and the deploy. The README no longer contains the literal, but that commit is
+# already on main and history is not rewritten, so this one historical finding is accepted
+# here, with the reason recorded. Anything new still fails the gate.
+5e3d80c123638d5151e971bff6dd8665ebc2af9b:session17-devsecops-pipeline/README.md:generic-api-key:345
