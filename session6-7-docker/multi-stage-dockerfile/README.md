@@ -12,16 +12,25 @@
 
 This repository is a **fork of the instructor's repository**
 ([Nency-Ravaliya/devops-heros](https://github.com/Nency-Ravaliya/devops-heros)), kept up to
-date, so the multi-stage Dockerfile came directly from it rather than needing a separate
-clone. The equivalent of the clone step was:
+date, so the multi-stage Dockerfile comes from it. To show the whole flow from scratch, I
+cloned the fork fresh into an empty folder, built the image from the clone and ran it:
 
-```bash
-# the repository was forked on GitHub, then cloned locally
-git clone https://github.com/Bhuvanesh66/devops-heros.git
-cd devops-heros/session6-7-docker/multi-stage-dockerfile
+![git clone, the Dockerfile stages, and the multi-stage build](image-3.png)
 
-git remote -v          # confirm the origin
-```
+- `git clone` then `git remote -v` confirms the source is `Bhuvanesh66/devops-heros`.
+- The build runs **12 steps across two stages**. Steps 1-5 are the `builder` stage
+  (`npm install` with dev dependencies plus all source files). Steps 6-12 are the
+  `production` stage, which starts again **from a clean `node:24-alpine`** and copies in only
+  `package*.json` and `server.js` with `COPY --from=builder`, installing production
+  dependencies only.
+
+![Running the image: the exact message, and docker ps on port 8080](image-4.png)
+
+- `docker ps` shows `multistage-c` up with `0.0.0.0:8080->8080/tcp`.
+- `curl http://localhost:8080` returns **`Hello World from Docker multi-stage build`**.
+- `ls /app` inside the container shows only `node_modules`, `package*.json` and `server.js`.
+  Nothing else from the build stage made it into the final image, and `docker history`
+  confirms the final image's layers come only from the production stage.
 
 The only change made to the original Dockerfile was the port: the assignment requires the
 application on **8080**, so `EXPOSE 3000` became `EXPOSE 8080` and the Express server was
