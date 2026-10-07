@@ -328,70 +328,136 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 .github/workflo
 | actionlint | 0 issues |
 | kubeconform | 6 resources valid |
 
-<!-- SHOT: 10-local-scans -->
+## Proof the gate works: it really blocked a change
 
-## Proof the gate works
+I didn't have to stage this one: **the gate failed for real on my own push.** Run
+[37604054535](https://github.com/Bhuvanesh66/devops-heros/actions/runs/37604054535) ran every
+scanner, and Gitleaks reported **2 secrets**. The README's "how to demo a failing gate"
+instructions contained the fake key `paymentApiKey = '...'` written out in full. Gitleaks found
+it in the working tree (`dir` scan) and in commit `5e3d80c` (`git` history scan).
 
-The gate exists to **stop** a bad change, so it should be shown failing. On a branch, add a fake secret and a vulnerable dependency, then open a pull request against `main` (pull requests never push or deploy):
+![The gate failing on a real finding: push and deploy skipped](screenshots/09-gate-fail.png)
+
+- Every scan job is green. Scanners only **report**, with `--exit-code 0`. The
+  **Security Gate** is the one job that decides, and it went red: `Secret scan | Gitleaks |
+  any secret | FAIL | 2`.
+- **`Push Image` and `Deploy` were `skipped`.** The image with the "leaked" key never reached
+  the registry or the cluster. That's exactly what a security gate is for.
+- The downloaded report shows the finding with the value **`REDACTED`**, thanks to
+  `--redact`, so the secret doesn't leak a second time through the CI artifacts.
+
+**How I fixed it, the way a real team would:**
+
+1. **Removed the literal.** The README now generates the demo key at run time
+   (`head -c 64 /dev/urandom | base64 ...`), so no key-shaped string is stored.
+2. **Accepted the historical finding explicitly.** Commit `5e3d80c` is already on `main`, and
+   rewriting shared history would need a force-push. Its single fingerprint
+   (`commit:file:rule:line`) is recorded in [`security/.gitleaksignore`](security/.gitleaksignore)
+   with the reason, and the history scan reads it via `--gitleaks-ignore-path`. Any **new**
+   secret still fails the gate. (If this had been a real credential, the first step would have
+   been to **revoke and rotate it**. Removing it from Git doesn't make a leaked key safe again.)
+3. The next run, [37604775904](https://github.com/Bhuvanesh66/devops-heros/actions/runs/37604775904),
+   was green end to end (below).
+
+An even earlier run had failed for a different reason: Trivy couldn't write
+`reports/trivy-image.json` because `reports/` is gitignored and doesn't exist on a fresh
+runner. The gate then failed on the **missing** report. That's deliberate: a scan that
+produced nothing counts as FAIL, never as "no findings". The fix was `mkdir -p reports`
+before the scan.
+
+### Optional: a deliberate failing PR
+
+To see SAST and SCA fail too, run this on a branch and open a pull request (pull requests
+never push or deploy):
 
 ```bash
 git switch -c demo/gate-fail
 cd session17-devsecops-pipeline
-
-# 1) A fake hard-coded credential (not a real key). It is generated on the fly so that no
-#    key-shaped literal is stored in this README - Gitleaks caught exactly that on the first run.
+# a fake credential, generated so no key-shaped literal is stored in this README
 KEY=$(head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 28)
-printf "'use strict';\nconst paymentApiKey = '%s'; // DEMO ONLY - fake\nmodule.exports = { paymentApiKey };\n" "$KEY" > src/config.js
-
-# 2) A dependency with a known HIGH vulnerability (lodash 4.17.20, command injection CVE-2021-23337)
+printf "'use strict';
+const paymentApiKey = '%s'; // DEMO ONLY - fake
+module.exports = { paymentApiKey };
+" "$KEY" > src/config.js
+# a dependency with a known HIGH vulnerability (lodash 4.17.20, CVE-2021-23337)
 npm install lodash@4.17.20 --save-exact
-
 git add -A && git commit -m "demo: gate should fail" && git push -u origin demo/gate-fail
-# open a PR to main and watch the Security Gate job
 ```
 
-I checked locally that each part is detected by the tool it targets:
+Expected: Gitleaks and my Semgrep rule `s17-hardcoded-credential` catch the key, and
+`npm audit` reports `lodash` as high, so the gate fails on SAST, SCA and Secret scan.
 
-- The fake key is reported by Gitleaks (`generic-api-key`) and by my Semgrep rule `s17-hardcoded-credential` (severity ERROR).
-- `npm audit` reports `lodash` as **high**.
+## Pipeline execution: the green run
 
-So the expected gate result is FAIL on SAST, SCA (npm audit, and Trivy fs) and Secret scan. `push-image` and `deploy` do not run. Afterwards, close the PR without merging and delete the branch. The fake key only exists in that branch's history.
+Run [37604775904](https://github.com/Bhuvanesh66/devops-heros/actions/runs/37604775904): all
+**ten stages passed in 5m 25s** and produced 9 artifacts.
 
-<!-- SHOT: 09-gate-fail -->
+![Run summary: all ten jobs green, and the artifacts](screenshots/01-run-graph.png)
 
-## Pipeline execution
+![gh run view: each stage and its conclusion](screenshots/01b-run-overview.png)
 
-Workflow run graph (all ten jobs in order):
+The `exit code 128` warnings are checkout's post-step tripping over a broken submodule pointer
+in the class material merged into this repo. They come after each job's work and don't affect
+results (see the Session 16 README for the trace).
 
-<!-- SHOT: 01-run-graph -->
+### Unit Test
 
-Unit tests and coverage (job summary):
+![Jest: 14 tests passed with coverage](screenshots/02-unit-tests.png)
 
-<!-- SHOT: 02-unit-tests -->
+14 Jest + supertest tests passed, including the security-relevant ones: security headers are
+present and the framework is hidden, malformed JSON is rejected **without leaking details**,
+and over-long and wrongly typed fields are refused. Line coverage is **98.87%**.
 
-SAST - Semgrep:
+### SAST: Semgrep
 
-<!-- SHOT: 03-sast -->
+![Semgrep: 187 rules on 6 files, 7 INFO findings](screenshots/03-sast.png)
 
-SCA - npm audit + Trivy fs:
+187 rules ran on the 6 JavaScript files, plus my custom rules. The 7 findings are all `INFO`:
+nodejsscan's `helmet_header_*` notices confirming that `helmet` sets the headers. The gate
+blocks only on `ERROR`, so SAST passes, but the findings are still recorded and uploaded as SARIF.
 
-<!-- SHOT: 04-sca -->
+### SCA: npm audit + Trivy fs
 
-Secret scan - Gitleaks:
+![npm audit: 19 moderate; Trivy fs: 0 in package-lock.json](screenshots/04-sca.png)
 
-<!-- SHOT: 05-secret-scan -->
+`npm audit` lists **19 moderate** advisories, all from `sprintf-js` deep inside Jest's
+**dev-only** dependency chain, with no upstream fix. They're below the HIGH/CRITICAL threshold
+and don't ship in the image (`npm ci --omit=dev`). Trivy's filesystem scan of
+`package-lock.json` reports **0** HIGH/CRITICAL.
 
-Container image scan - Trivy:
+### Secret scan: Gitleaks
 
-<!-- SHOT: 06-image-scan -->
+![Gitleaks: no leaks in the files or the 3 commits of history](screenshots/05-secret-scan.png)
 
-Security gate summary:
+Both scans are clean: the working tree (62 KB) and the git history of this project (3 commits,
+287 KB), now that the historical demo key is accepted in `.gitleaksignore`.
 
-<!-- SHOT: 07-security-gate-summary -->
+### Container image scan: Trivy
 
-Deploy to Kubernetes - rollout + smoke test:
+![Trivy image: alpine 3.24.2, 0 vulnerabilities; SBOM with 89 components](screenshots/06-image-scan.png)
 
-<!-- SHOT: 08-deploy -->
+Trivy scanned the **exact image tar** produced by `docker-build`: Alpine 3.24.2 (18 OS
+packages) and every npm package inside, with **0 vulnerabilities**. A CycloneDX 1.7 **SBOM**
+with **89 components** was generated as an artifact, a record of what's in the image.
+
+### Security gate
+
+![Security gate: PASS on all five checks](screenshots/07-security-gate-summary.png)
+
+All five checks passed: Semgrep, npm audit, Trivy fs, Gitleaks, Trivy image. Only now may the
+image be pushed and deployed.
+
+### Push Image and Deploy to Kubernetes
+
+![Pushed to GHCR, deployed to kind, smoke-tested](screenshots/08-deploy.png)
+
+- The scanned image was pushed to `ghcr.io/bhuvanesh66/session17-devsecops-api` with the commit
+  SHA tag and `latest`, both with the same digest `sha256:03024c9a...`.
+- A kind cluster came up in 19 s. The hardened manifests were applied (namespace, service
+  account, Service, Deployment, and a **default-deny NetworkPolicy** plus an allow-http
+  policy), and the rollout finished with 2/2 Pods.
+- Smoke test: `/health` returned `{"status":"ok"}`, a `POST /api/notes` created a note, and
+  `GET /api/notes` returned it (`"title":"deployed by GitHub Actions"`).
 
 ## Workflow details
 
