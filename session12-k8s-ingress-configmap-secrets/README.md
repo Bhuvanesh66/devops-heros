@@ -34,8 +34,22 @@ session12-k8s-ingress-configmap-secrets/
 ├── 06-apps-for-ingress.yaml              two apps + two Services to route between
 ├── 07-ingress-path-based.yaml            /shop and /admin
 ├── 08-ingress-host-based.yaml            shop.yatri.local and admin.yatri.local
-└── 09-ingress-tls.yaml                   HTTPS termination
+├── 09-ingress-tls.yaml                   HTTPS termination
+├── ingress-vs-ingress-controller.md      Task 4 - written comparison
+├── secrets-and-git.md                    Task 2 - why Secrets stay out of git
+└── troubleshooting/README.md             Task 5 - the trailing-newline Secret bug
 ```
+
+## Deliverables
+
+Besides the hands-on parts below, the brief asks for these written pieces as separate
+documents:
+
+| Task | Document | What it covers |
+| ---- | -------- | -------------- |
+| Task 2 | [secrets-and-git.md](secrets-and-git.md) | Why Secrets must not be committed: base64, permanent history, scanning bots, rotation, Sealed Secrets / External Secrets Operator / SOPS / CI secret stores, `.gitignore` + Gitleaks |
+| Task 4 | [ingress-vs-ingress-controller.md](ingress-vs-ingress-controller.md) | Ingress vs Ingress Controller: definitions, difference, why both are needed, controller examples, Gateway API |
+| Task 5 | [troubleshooting/README.md](troubleshooting/README.md) | The trailing-newline Secret bug: `echo` vs `echo -n`, `xxd` / `od -c`, the two base64 strings, and the fixes |
 
 ---
 
@@ -255,6 +269,9 @@ the wire/storage format.
 
 And a practical rule from all of this: **never commit a Secret manifest to git.**
 `02-secret.yaml` in this folder contains deliberately fake values for the homework.
+The full reasoning (permanent history, scanning bots, rotation, and what to commit instead) is
+in [secrets-and-git.md](secrets-and-git.md), and the classic `echo | base64` newline bug is
+worked through in [troubleshooting/README.md](troubleshooting/README.md).
 
 ---
 
@@ -501,3 +518,6 @@ minikube addons disable ingress
 | Host-based routing | Done — Part 3 |
 | TLS termination with a `kubernetes.io/tls` Secret | Done — Part 3 |
 | Debugging notes | Part 4 |
+| T2: Why Secrets should not be committed to git | Done — [secrets-and-git.md](secrets-and-git.md) |
+| T4: Ingress vs Ingress Controller | Done — [ingress-vs-ingress-controller.md](ingress-vs-ingress-controller.md) |
+| T5: Troubleshooting — the trailing-newline Secret bug | Done — [troubleshooting/README.md](troubleshooting/README.md) |
