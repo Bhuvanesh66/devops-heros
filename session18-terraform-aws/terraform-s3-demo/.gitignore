@@ -1,0 +1,21 @@
+# Local provider plugins and modules downloaded by "terraform init"
+.terraform/
+
+# State files contain real resource IDs and can contain secrets
+*.tfstate
+*.tfstate.*
+
+# Crash and override files
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Saved plan files
+*.tfplan
+tfplan
+
+# Note: .terraform.lock.hcl is intentionally NOT ignored.
+# It pins exact provider versions and should be committed.

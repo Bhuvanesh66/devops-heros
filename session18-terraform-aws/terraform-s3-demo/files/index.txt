@@ -1,0 +1,7 @@
+Hello from Terraform!
+
+This file was uploaded to Amazon S3 by Terraform as part of the
+Session 18 (Terraform & IaC) homework.
+
+Student   : Bhuvanesh M S
+Enrollment: 24bcs10134
