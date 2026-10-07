@@ -1,0 +1,9 @@
+# A custom StorageClass. Nobody creates PVs for it: the provisioner does, on demand.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: s13-fast
+provisioner: k8s.io/minikube-hostpath     # minikube's built-in dynamic provisioner
+reclaimPolicy: Delete                     # PV and data are removed with the PVC
+volumeBindingMode: WaitForFirstConsumer   # don't provision until a Pod needs it
+allowVolumeExpansion: true

@@ -1,0 +1,17 @@
+# Static provisioning, step 1: an administrator creates the PersistentVolume by hand.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: s13-static-pv
+  labels:
+    type: local
+spec:
+  storageClassName: manual          # only PVCs asking for "manual" can bind to it
+  capacity:
+    storage: 200Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain   # keep the data when the claim is deleted
+  hostPath:
+    path: /mnt/data/s13-static
+    type: DirectoryOrCreate

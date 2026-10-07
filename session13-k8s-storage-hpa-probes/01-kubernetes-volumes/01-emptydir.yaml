@@ -1,0 +1,27 @@
+# emptyDir: scratch space shared by every container in ONE Pod.
+# It is created when the Pod lands on a node and deleted with the Pod.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: emptydir-demo
+  labels:
+    demo: emptydir
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c", "while true; do date '+%T written by writer' >> /cache/log.txt; sleep 5; done"]
+      volumeMounts:
+        - name: shared-cache
+          mountPath: /cache
+    - name: reader
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      volumeMounts:
+        - name: shared-cache
+          mountPath: /data          # same volume, different path
+          readOnly: true
+  volumes:
+    - name: shared-cache
+      emptyDir:
+        sizeLimit: 50Mi            # the Pod is evicted if it writes more than this

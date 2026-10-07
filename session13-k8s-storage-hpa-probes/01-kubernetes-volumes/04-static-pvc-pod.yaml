@@ -1,0 +1,29 @@
+# Static provisioning, step 2: a developer claims storage (PVC) and uses it in a Pod.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s13-static-pvc
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi                # smaller than the PV is fine: the whole PV is bound
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-pvc-pod
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: s13-static-pvc

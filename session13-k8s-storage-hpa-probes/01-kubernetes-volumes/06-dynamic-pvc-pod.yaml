@@ -1,0 +1,12 @@
+# Dynamic provisioning: the PVC names a StorageClass and a PV appears automatically.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s13-dynamic-pvc
+spec:
+  storageClassName: s13-fast
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 300Mi

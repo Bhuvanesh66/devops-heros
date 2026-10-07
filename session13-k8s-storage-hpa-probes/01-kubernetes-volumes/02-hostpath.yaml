@@ -1,0 +1,22 @@
+# hostPath: mounts a directory from the NODE's filesystem into the Pod.
+# Data survives the Pod, but it is tied to that one node - fine for minikube,
+# risky in a multi-node cluster (and a security concern: it exposes the host).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostpath-demo
+  labels:
+    demo: hostpath
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo \"hostPath write from $(hostname) at $(date '+%T')\" >> /host-data/visits.txt; sleep 3600"]
+      volumeMounts:
+        - name: node-dir
+          mountPath: /host-data
+  volumes:
+    - name: node-dir
+      hostPath:
+        path: /tmp/s13-hostpath
+        type: DirectoryOrCreate

@@ -1,0 +1,50 @@
+# yatri-backend: the Deployment that hpa.yml scales.
+# HPA computes utilisation as usage / REQUEST, so resources.requests.cpu is mandatory -
+# without it the HPA shows <unknown> and never scales.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yatri-backend
+  labels:
+    app: yatri-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: yatri-backend
+  template:
+    metadata:
+      labels:
+        app: yatri-backend
+    spec:
+      containers:
+        - name: backend
+          image: python:3.12-alpine
+          command: ["python", "/app/server.py"]
+          ports:
+            - containerPort: 5000
+          resources:
+            requests:
+              cpu: 100m          # 50% target = 50m average per Pod
+              memory: 32Mi
+            limits:
+              cpu: 300m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: code
+              mountPath: /app
+      volumes:
+        - name: code
+          configMap:
+            name: yatri-backend-code
