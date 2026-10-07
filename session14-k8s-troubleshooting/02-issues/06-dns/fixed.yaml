@@ -1,0 +1,19 @@
+# Fix: use the Service's real name: <service>.<namespace>.svc.cluster.local
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fail-4-dns-failure-pod
+  labels:
+    tier: triage-gauntlet
+    scenario: dns-failure
+spec:
+  containers:
+    - name: client
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Attempting connection to internal database...";
+          nc -zv -w 3 postgres-db.production.svc.cluster.local 5432;
+          echo "Process sleeping...";
+          sleep 3600

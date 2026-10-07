@@ -1,0 +1,19 @@
+# Backend Pods: label app=payments, the container listens on 8080.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: payments }
+  template:
+    metadata:
+      labels: { app: payments }
+    spec:
+      containers:
+        - name: api
+          image: hashicorp/http-echo:1.0
+          args: ["-listen=:8080", "-text=payments OK"]
+          ports:
+            - containerPort: 8080

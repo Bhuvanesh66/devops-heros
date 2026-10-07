@@ -1,0 +1,21 @@
+# Fix: reference the key that really exists in the ConfigMap.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: checkout
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo gateway=$PAYMENT_GATEWAY_URL currency=$CURRENCY; sleep 3600"]
+      env:
+        - name: PAYMENT_GATEWAY_URL
+          valueFrom:
+            configMapKeyRef:
+              name: checkout-config
+              key: PAYMENT_GATEWAY_URL
+        - name: CURRENCY
+          valueFrom:
+            configMapKeyRef:
+              name: checkout-config
+              key: CURRENCY

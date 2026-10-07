@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkout-config
+data:
+  PAYMENT_GATEWAY_URL: "http://payments.default.svc.cluster.local"
+  CURRENCY: "INR"

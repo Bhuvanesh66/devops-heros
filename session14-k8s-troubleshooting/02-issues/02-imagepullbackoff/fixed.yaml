@@ -1,0 +1,12 @@
+# Fix: point at an image and tag that actually exist in a registry the node can reach.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fail-2-imagepull-pod
+  labels:
+    tier: triage-gauntlet
+    scenario: imagepull
+spec:
+  containers:
+    - name: web-app
+      image: nginx:1.27-alpine

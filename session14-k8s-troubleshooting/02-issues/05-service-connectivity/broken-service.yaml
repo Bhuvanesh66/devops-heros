@@ -1,0 +1,13 @@
+# Two classic mistakes in one Service:
+#   1. selector app=payment  (the Pods are labelled app=payments) -> no endpoints
+#   2. targetPort 80         (the container listens on 8080)      -> connection refused
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+spec:
+  selector:
+    app: payment
+  ports:
+    - port: 80
+      targetPort: 80

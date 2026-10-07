@@ -1,0 +1,22 @@
+# Configuration problem: the Pod asks the ConfigMap for key PAYMENT_URL,
+# but the key in the ConfigMap is PAYMENT_GATEWAY_URL -> CreateContainerConfigError.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: checkout
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo gateway=$PAYMENT_GATEWAY_URL currency=$CURRENCY; sleep 3600"]
+      env:
+        - name: PAYMENT_GATEWAY_URL
+          valueFrom:
+            configMapKeyRef:
+              name: checkout-config
+              key: PAYMENT_URL           # <- wrong key
+        - name: CURRENCY
+          valueFrom:
+            configMapKeyRef:
+              name: checkout-config
+              key: CURRENCY

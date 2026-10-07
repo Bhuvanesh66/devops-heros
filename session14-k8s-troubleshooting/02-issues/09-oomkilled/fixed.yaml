@@ -1,0 +1,28 @@
+# Fix: this job really needs about 200Mi, so give it a limit that fits (and a matching request).
+# The other valid fix is to change the code to stream data instead of holding it all in memory.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fail-5-oomkilled-pod
+  labels:
+    tier: triage-gauntlet
+    scenario: oomkilled
+spec:
+  restartPolicy: Never
+  containers:
+    - name: memory-leaker
+      image: python:3.11-alpine
+      command:
+        - "python3"
+        - "-c"
+        - |
+          print("Allocating memory rapidly...")
+          chunks = []
+          for i in range(20):
+              chunks.append(b"x" * (10 * 1024 * 1024))
+          print(f"Allocated {len(chunks) * 10} MB without being killed")
+      resources:
+        requests:
+          memory: "256Mi"
+        limits:
+          memory: "320Mi"

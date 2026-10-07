@@ -1,0 +1,11 @@
+# Fully fixed: selector matches the Pod label AND targetPort matches containerPort.
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+spec:
+  selector:
+    app: payments
+  ports:
+    - port: 80
+      targetPort: 8080

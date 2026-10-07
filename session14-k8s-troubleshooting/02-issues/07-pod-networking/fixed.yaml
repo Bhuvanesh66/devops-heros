@@ -1,0 +1,13 @@
+# Fix: listen on all interfaces (0.0.0.0) so connections to the Pod IP are accepted.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: inventory
+  labels: { app: inventory }
+spec:
+  containers:
+    - name: api
+      image: python:3.11-alpine
+      command: ["python3", "-m", "http.server", "8080", "--bind", "0.0.0.0"]
+      ports:
+        - containerPort: 8080

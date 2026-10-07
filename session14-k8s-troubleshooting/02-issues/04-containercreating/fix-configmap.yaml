@@ -1,0 +1,10 @@
+# Fix: create the missing ConfigMap. The waiting Pod picks it up on the kubelet's next retry.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: report-settings
+data:
+  settings.ini: |
+    [report]
+    format = pdf
+    schedule = daily
