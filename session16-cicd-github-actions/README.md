@@ -288,34 +288,118 @@ devops-heros/
 
 ## Pipeline execution screenshots
 
-### Workflow run summary (all jobs green)
+All screenshots come from the first real run of this workflow:
+[run #1 (37602072730)](https://github.com/Bhuvanesh66/devops-heros/actions/runs/37602072730),
+triggered by pushing commit `79a4d71` to `main`. It **passed end to end in 2m 8s.**
 
-<!-- SHOT: 01-actions-run-summary -->
+### Workflow run summary: all jobs green
 
-### CI - lint-test job
+![GitHub Actions run summary: lint-test matrix, build and deploy all green](screenshots/01-actions-run-summary.png)
 
-<!-- SHOT: 02-lint-test-job -->
+- The job graph is exactly the pipeline in the diagram: the `lint-test` matrix (2 jobs), then
+  `build` (36 s), then `deploy` (1m 6s). Each arrow is a `needs:` dependency.
+- **4 artifacts** were produced, and the job summaries (test table, image info, deployment
+  table) are rendered under the graph.
+- **The yellow warnings, and what they mean.** Each job shows `The process '/usr/bin/git'
+  failed with exit code 128` in checkout's *post* step. I traced it in the log:
+  `fatal: No url found for submodule path 'session-16-github-actions/mini-project
+  10-33-34-265' in .gitmodules`. The class material merged into this repo contains a folder
+  committed as a submodule pointer with no `.gitmodules` entry, and checkout's cleanup trips
+  over it. It happens *after* the job's work, doesn't affect the result, and isn't in my
+  project. The other notice is GitHub announcing that `ubuntu-latest` moves to Ubuntu 26
+  on 19 October 2026.
 
-### CI - build job
+![gh run view: the same run from the terminal](screenshots/02-run-overview.png)
 
-<!-- SHOT: 03-build-job -->
+### CI: lint-test job
 
-### CD - deploy job
+![Real log lines from Lint & Test (Python 3.12)](screenshots/03-lint-test-job.png)
 
-<!-- SHOT: 04-deploy-job -->
+- **Runner:** a GitHub-hosted `Linux (X64)` machine; `setup-python` installed Python 3.12.15.
+- **Lint:** `ruff format --check` reports all 8 files formatted, after `ruff check` passed.
+- **Test:** `collected 23 items` gave `23 passed in 0.17s` with **100% coverage**, above the
+  80% floor set in `pyproject.toml`. A drop below 80% would fail the job.
 
-### Artifacts
+### CI: build job
 
-<!-- SHOT: 05-artifacts -->
+![Real log lines from Build & Push Docker Image](screenshots/04-build-job.png)
 
-### Image in GitHub Container Registry
+- BuildKit runs the two Dockerfile stages in parallel: `builder` (builds wheels) and
+  `runtime` (adds the non-root user, installs the wheels, copies `app/`).
+- It then **pushes** the manifest to `ghcr.io/bhuvanesh66/session16-cicd-demo` under two
+  tags, `sha-79a4d71` and `latest`, authenticated with `GITHUB_TOKEN`.
+- The `build-info.txt` artifact records version `1.0.1` (from the run number), the commit, the
+  image, and the digest `sha256:d6c03ef1...`.
 
-<!-- SHOT: 06-ghcr-package -->
+### CD: deploy job
+
+![Real log lines from Deploy to Kubernetes (development)](screenshots/05-deploy-job.png)
+
+- `helm/kind-action` created the cluster `session16`, ready after 17 s, with one control-plane
+  node running Kubernetes v1.35.
+- The job **pulled the exact image the build job pushed** (`sha-79a4d71`) from GHCR and
+  loaded it into the cluster.
+- `DEMO_API_KEY received from GitHub Secrets (length: 21 characters, value hidden)`, then
+  `secret/session16-demo-secret created`, so the repository secret became a Kubernetes Secret.
+- `deployment "session16-cicd-demo" successfully rolled out` means both replicas passed their
+  readiness probes.
+- **Smoke test:** `/health` returned `"status":"ok"` with `"git_sha":"79a4d71"` (the pod
+  knows which commit it runs), and `/api/convert` turned 5 km into **5000.0 m**. The `21`
+  printed from inside the pod confirms the secret reached the container.
+
+### Artifacts and secrets
+
+![Artifacts of the run, the downloaded build-info, and the masked secret](screenshots/06-artifacts-secrets.png)
+
+- Four artifacts: `test-results-py3.11`, `test-results-py3.12` (JUnit + coverage XML),
+  `build-info`, and Buildx's own build record. I downloaded `build-info` with
+  `gh run download` and its contents match the build log.
+- `gh secret list` shows `DEMO_API_KEY` exists, but nobody, including me, can read its
+  value back. In the log it only appears as `DEMO_API_KEY: ***`. GitHub masks secrets
+  automatically.
+
+### Image in GitHub Container Registry and the development environment
+
+![The development environment and its deployment record](screenshots/09-environment.png)
+
+- The deploy job's `environment: development` created a GitHub **environment** and a
+  **deployment record** for commit `79a4d71`, going `in_progress` then `success`, with a link
+  back to the job.
+- The pushed image tags are `ghcr.io/bhuvanesh66/session16-cicd-demo:sha-79a4d71` and
+  `:latest`, shown in the build log and in `build-info` above. The package is private, the
+  GHCR default, which is why the deploy job logs in with `GITHUB_TOKEN` (`packages: read`)
+  before pulling.
 
 ### Local tests
 
-<!-- SHOT: 07-local-tests -->
+![The same lint and test steps run locally in a python:3.12-slim container](screenshots/07-local-tests.png)
+
+Before pushing, I ran the CI job's commands locally in a clean `python:3.12-slim` container:
+`All checks passed!`, all files formatted, **23 passed** with 100% coverage. That matches the
+runner's result.
 
 ### Local Docker run
 
-<!-- SHOT: 08-local-docker -->
+![Building and running the image locally: healthy, non-root, correct answers](screenshots/08-local-docker.png)
+
+- The image is **189 MB** (46 MB content), and the container reports **`(healthy)`** after the
+  Dockerfile `HEALTHCHECK` passes.
+- `/health` shows `"environment":"local"` and the commit the image was built from, and 100 C
+  converts to **212.0 F**.
+- `id` inside the container prints `uid=10001(app)`: the app does **not** run as root.
+
+## What I learned
+
+1. **CI and CD are separate jobs with explicit hand-offs.** The image tag computed in `build`
+   is passed to `deploy` as a job output, so CD deploys exactly what CI tested and built.
+2. **The secrets model is write-only.** I could set `DEMO_API_KEY` but never read it back;
+   the runner masks it as `***`, and only its length is ever printed.
+3. **Artifacts make a run auditable.** Test reports and build info are kept for 7 days and
+   can be downloaded later with `gh run download`.
+4. **Path filters keep a shared repo sane.** This workflow only runs when this folder or the
+   workflow file changes. While doing this I also found that two older practice workflows
+   (`main.yml`, an invalid one-liner, and `ci.yml`, which expected a root
+   `requirements.txt`) were failing on *every* push to the repo. I removed `main.yml` and made
+   `ci.yml` manual-only.
+5. **Warnings deserve a look even on a green run.** The `exit code 128` annotation led to a
+   broken submodule pointer in the merged class material.
