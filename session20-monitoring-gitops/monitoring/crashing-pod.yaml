@@ -1,0 +1,12 @@
+# A deliberately broken Pod, to fire the PodCrashLooping alert.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: payment-worker
+  namespace: demo
+  labels: { app: payment-worker }
+spec:
+  containers:
+    - name: worker
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'connecting to payments-db...'; sleep 2; echo 'ERROR: payments-db unreachable' >&2; exit 1"]

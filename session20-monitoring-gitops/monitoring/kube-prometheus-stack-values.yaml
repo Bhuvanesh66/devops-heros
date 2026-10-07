@@ -1,0 +1,47 @@
+# kube-prometheus-stack, sized for a single-node minikube with ~3.5 GB of RAM.
+# Prometheus + Alertmanager + Grafana + node-exporter + kube-state-metrics.
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30900
+  prometheusSpec:
+    retention: 6h
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    # pick up ServiceMonitors / PrometheusRules from every namespace, not only
+    # the ones labelled with this Helm release
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 300Mi }
+      limits: { memory: 700Mi }
+alertmanager:
+  service:
+    type: NodePort
+    nodePort: 30903
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+grafana:
+  adminPassword: session20-demo-only
+  service:
+    type: NodePort
+    nodePort: 30300
+  # local lab only: anonymous Viewer access so dashboards can be screenshotted headlessly
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Editor
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki.monitoring.svc.cluster.local:3100
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+# minikube runs these inside the node and does not expose their metrics endpoints
+kubeEtcd: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeProxy: { enabled: false }

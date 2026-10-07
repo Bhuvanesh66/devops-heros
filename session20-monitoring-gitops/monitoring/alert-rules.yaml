@@ -1,0 +1,32 @@
+# Alerting rules, loaded by the Prometheus Operator and routed to Alertmanager.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-alerts
+  namespace: demo
+spec:
+  groups:
+    - name: demo.rules
+      rules:
+        - alert: PodinfoHighCPU
+          # CPU used / CPU requested, per Pod, above 80% for 1 minute
+          expr: |
+            sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="demo", container="podinfo"}[2m]))
+              / sum by (pod) (kube_pod_container_resource_requests{namespace="demo", container="podinfo", resource="cpu"})
+              > 0.8
+          for: 1m
+          labels: { severity: warning }
+          annotations:
+            summary: "podinfo Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its CPU request"
+        - alert: PodCrashLooping
+          expr: max by (pod, container) (kube_pod_container_status_waiting_reason{namespace="demo", reason="CrashLoopBackOff"}) == 1
+          for: 1m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{ $labels.pod }} / {{ $labels.container }} is in CrashLoopBackOff"
+        - alert: PodinfoDown
+          expr: absent(up{namespace="demo", service="podinfo"} == 1)
+          for: 1m
+          labels: { severity: critical }
+          annotations:
+            summary: "No healthy podinfo target is being scraped"

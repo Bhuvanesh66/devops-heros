@@ -1,0 +1,59 @@
+# podinfo: a small Go web app that exposes Prometheus metrics on /metrics,
+# health endpoints (/healthz, /readyz) and writes structured JSON logs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podinfo
+  namespace: demo
+  labels: { app: podinfo }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: podinfo }
+  template:
+    metadata:
+      labels: { app: podinfo }
+    spec:
+      containers:
+        - name: podinfo
+          image: ghcr.io/stefanprodan/podinfo:6.15.0
+          command: ["./podinfo", "--port=9898", "--level=info"]
+          ports:
+            - { name: http, containerPort: 9898 }
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { cpu: 300m, memory: 96Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: podinfo
+  namespace: demo
+  labels: { app: podinfo }
+spec:
+  selector: { app: podinfo }
+  ports:
+    - { name: http, port: 9898, targetPort: http }
+---
+# Tells the Prometheus Operator to scrape every Pod behind the podinfo Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: podinfo
+  namespace: demo
+spec:
+  selector:
+    matchLabels: { app: podinfo }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

@@ -1,0 +1,21 @@
+# Generates traffic (and CPU) on podinfo so the dashboards and the CPU alert have something to show.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  namespace: demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: load-generator }
+  template:
+    metadata:
+      labels: { app: load-generator }
+    spec:
+      containers:
+        - name: hey
+          image: busybox:1.36
+          # /delay and /status endpoints make podinfo do work and record non-2xx responses too
+          command: ["sh", "-c", "while true; do wget -q -O- http://podinfo.demo:9898/ >/dev/null; wget -q -O- http://podinfo.demo:9898/status/500 >/dev/null 2>&1; done"]
+          resources:
+            requests: { cpu: 20m, memory: 8Mi }
