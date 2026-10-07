@@ -1,0 +1,40 @@
+# Argo CD Application: "keep namespace taskflow identical to the Helm chart
+# final-devops-project/helm/taskflow (rendered with values-dev.yaml) on the main
+# branch of this repository". Applied once by hand, it lives outside the
+# watched chart path on purpose:
+#   kubectl apply -f final-devops-project/gitops/argocd-application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: taskflow-dev
+  namespace: argocd
+  # delete the app's resources too when the Application is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Bhuvanesh66/devops-heros.git
+    targetRevision: main
+    path: final-devops-project/helm/taskflow
+    helm:
+      releaseName: taskflow
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: taskflow
+  syncPolicy:
+    automated:
+      prune: true    # delete resources that were removed from Git
+      selfHeal: true # undo manual changes made directly in the cluster
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10

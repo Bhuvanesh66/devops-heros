@@ -1,0 +1,38 @@
+# Lab copy of the working TaskFlow stack in its own namespace (taskflow-lab),
+# so the broken variants never touch the real deployment in namespace taskflow
+# (which Argo CD may be self-healing). Each issue-N overlay starts from this.
+#   kubectl apply -k final-devops-project/troubleshooting/lab-base     # healthy baseline
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: taskflow-lab
+resources:
+  - ../../kubernetes
+labels:
+  - pairs:
+      app.kubernetes.io/instance: taskflow-lab
+    includeSelectors: false
+patches:
+  # separate host so it does not clash with the real Ingress for taskflow.local
+  - target:
+      kind: Ingress
+      name: taskflow
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: taskflow-lab.local
+  # keep the lab small: one replica of each, HPAs allowed down to 1
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 2
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

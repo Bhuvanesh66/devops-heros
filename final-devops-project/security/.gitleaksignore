@@ -1,0 +1,3 @@
+# Accepted Gitleaks findings, one fingerprint per line (commit:file:rule:line).
+# Policy: only add a line after reviewing the finding, with a comment that says
+# why it is safe and who accepted it. Empty on purpose: nothing is accepted.

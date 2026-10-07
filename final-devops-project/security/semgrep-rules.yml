@@ -1,0 +1,112 @@
+# Custom Semgrep rules for the TaskFlow backend (Python / FastAPI / SQLAlchemy).
+# They run on top of the registry rulesets (p/python, p/javascript, p/dockerfile)
+# and encode project policy. Severity ERROR blocks the pipeline in the security
+# gate (security/gate.py); WARNING is reported only.
+rules:
+  - id: taskflow-sqlalchemy-text-injection
+    languages: [python]
+    severity: ERROR
+    message: >-
+      sqlalchemy.text() is built from an f-string, concatenation or .format().
+      Any user input in it becomes SQL injection. Use bound parameters:
+      text("... WHERE id = :id"), {"id": value} - or the ORM.
+    metadata:
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      category: security
+    pattern-either:
+      - pattern: sqlalchemy.text(f"...")
+      - pattern: sqlalchemy.text("..." + $X)
+      - pattern: sqlalchemy.text($X + "...")
+      - pattern: sqlalchemy.text("...".format(...))
+      - pattern: sqlalchemy.text("..." % $X)
+
+  - id: taskflow-hardcoded-db-url-credentials
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A database URL with an inline password is hard-coded. Credentials come
+      from the environment (DATABASE_URL or DB_USER/DB_PASSWORD from a
+      Kubernetes Secret), never from source code.
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      category: security
+    patterns:
+      - pattern: '"$URL"'
+      - metavariable-regex:
+          metavariable: $URL
+          regex: ^(postgres(ql)?|mysql|mariadb)(\+\w+)?://[^:/@\s]+:[^@/\s]+@
+    paths:
+      exclude:
+        - "tests/"
+
+  - id: taskflow-hardcoded-secret-assignment
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A credential-looking name is assigned a string literal. Read secrets
+      from the environment / settings instead.
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: $NAME = "$VALUE"
+          - pattern: '$NAME: $T = "$VALUE"'
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i)^.*(secret|passw(or)?d|api_?key|access_?key|private_?key|auth_?token).*$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: ^.{6,}$
+    paths:
+      exclude:
+        - "tests/"
+
+  - id: taskflow-subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >-
+      subprocess with shell=True runs the command through /bin/sh; any
+      interpolated value allows command injection. Pass an argument list.
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+      category: security
+    pattern-either:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+
+  - id: taskflow-dynamic-code-execution
+    languages: [python]
+    severity: ERROR
+    message: eval/exec on dynamic input is remote code execution waiting to happen.
+    metadata:
+      cwe: "CWE-95: Eval Injection"
+      category: security
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+
+  - id: taskflow-uvicorn-reload-or-debug
+    languages: [python]
+    severity: WARNING
+    message: >-
+      uvicorn reload/debug must not be enabled in code that ships in the image;
+      use the CLI flag locally instead.
+    metadata:
+      category: security
+    pattern-either:
+      - pattern: uvicorn.run(..., reload=True, ...)
+      - pattern: uvicorn.run(..., debug=True, ...)
+      - pattern: FastAPI(..., debug=True, ...)
+
+  - id: taskflow-cors-wildcard-with-credentials
+    languages: [python]
+    severity: ERROR
+    message: >-
+      CORS allow_origins=["*"] together with allow_credentials=True lets any
+      site make authenticated requests. List the allowed origins explicitly.
+    metadata:
+      cwe: "CWE-942: Permissive Cross-domain Policy"
+      category: security
+    pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=["*"], ..., allow_credentials=True, ...)

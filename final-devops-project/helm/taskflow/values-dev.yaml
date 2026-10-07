@@ -1,0 +1,38 @@
+# Development overlay: single-node minikube/kind, and the values file Argo CD uses
+# (gitops/argocd-application.yaml). GitOps promotion = change the two image tags
+# below to a commit SHA that CI pushed to GHCR, commit, push; Argo CD syncs it.
+
+backend:
+  image:
+    tag: latest
+  logLevel: DEBUG
+  appEnv: development
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 4
+
+frontend:
+  image:
+    tag: latest
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 3
+
+database:
+  # DEMO-ONLY placeholder for a throw-away dev cluster. Real environments use
+  # database.existingSecret (see values-prod.yaml).
+  password: dev-only-change-me
+
+postgres:
+  persistence:
+    size: 1Gi
+
+ingress:
+  host: taskflow.local
+
+serviceMonitor:
+  enabled: true
+prometheusRule:
+  enabled: true
+grafanaDashboard:
+  enabled: true

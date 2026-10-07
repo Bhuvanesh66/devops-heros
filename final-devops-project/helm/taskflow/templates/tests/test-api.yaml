@@ -1,0 +1,43 @@
+# `helm test <release>`: checks the backend readiness endpoint and the frontend's
+# /api proxy from inside the cluster.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "taskflow.fullname" . }}-test-api
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: curl
+      image: curlimages/curl:8.22.0
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -e
+          echo "backend /ready"
+          curl -fsS http://{{ include "taskflow.backend.fullname" . }}:{{ .Values.backend.service.port }}/ready
+          echo
+          echo "frontend -> /api/tasks"
+          curl -fsS http://{{ include "taskflow.frontend.fullname" . }}:{{ .Values.frontend.service.port }}/api/tasks
+          echo
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]

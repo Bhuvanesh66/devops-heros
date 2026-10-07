@@ -1,0 +1,17 @@
+# Terraform working files and state - never commit state (it can hold secrets).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# Real variable values; only the .example is committed.
+terraform.tfvars
+*.auto.tfvars

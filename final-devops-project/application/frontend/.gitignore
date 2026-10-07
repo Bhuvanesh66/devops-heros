@@ -1,0 +1,7 @@
+node_modules/
+dist/
+reports/
+.vite/
+npm-debug.log*
+.env
+.env.*

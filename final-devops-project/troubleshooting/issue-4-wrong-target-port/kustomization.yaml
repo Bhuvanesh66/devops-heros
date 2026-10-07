@@ -1,0 +1,13 @@
+# Issue 4 - the backend Service forwards to a port the container does not listen on.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../lab-base
+patches:
+  - target:
+      kind: Service
+      name: taskflow-backend
+    patch: |-
+      - op: replace
+        path: /spec/ports/0/targetPort
+        value: 8080

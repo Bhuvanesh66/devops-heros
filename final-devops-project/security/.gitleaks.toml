@@ -1,0 +1,19 @@
+# Gitleaks configuration for the TaskFlow final project.
+# Start from the full built-in rule set (cloud keys, GitHub tokens, private keys,
+# JWTs, generic API keys, ...) and only add a narrow allowlist of generated files.
+title = "final-devops-project gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated or third-party files that are never committed"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)reports/''',
+  '''(^|/)\.terraform/''',
+  # lockfiles only contain integrity hashes (sha512-...) and provider checksums
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)\.terraform\.lock\.hcl$''',
+]

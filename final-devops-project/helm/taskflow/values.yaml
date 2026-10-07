@@ -1,0 +1,151 @@
+# Default values for the TaskFlow chart.
+# Environment overlays: values-dev.yaml (minikube/kind, Argo CD) and values-prod.yaml.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Pull secrets for private GHCR packages, e.g. [{name: ghcr-pull}]
+imagePullSecrets: []
+
+# ---------------------------------------------------------------- backend (FastAPI)
+backend:
+  image:
+    repository: ghcr.io/bhuvanesh66/final-taskflow-backend
+    # CI sets this to the commit SHA; "latest" is only a convenience default.
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 8000
+  service:
+    type: ClusterIP
+    port: 8000
+  logLevel: INFO
+  appEnv: kubernetes
+  # Run `python -m app.prestart` (wait for DB + alembic upgrade head) as an initContainer.
+  migrations:
+    enabled: true
+  probes:
+    livenessPath: /health
+    readinessPath: /ready
+    startupPath: /health
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  podAnnotations: {}
+  extraEnv: []
+
+# ------------------------------------------------------------- frontend (React + nginx)
+frontend:
+  image:
+    repository: ghcr.io/bhuvanesh66/final-taskflow-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 8080
+  service:
+    type: ClusterIP
+    port: 80
+  healthPath: /healthz
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  podAnnotations: {}
+
+# ------------------------------------------------------------------ database
+database:
+  name: taskflow
+  user: taskflow
+  # Either point at a Secret you created yourself (keys DB_USER and DB_PASSWORD) ...
+  existingSecret: ""
+  # ... or let the chart create one from this value. It must be set (the chart
+  # fails to render otherwise); pass it with --set, never commit a real one.
+  password: ""
+  # Used only when postgres.enabled=false (e.g. an RDS endpoint).
+  externalHost: ""
+  port: 5432
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 17-alpine
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 1Gi
+    # "" = cluster default StorageClass (minikube: standard, kind: standard)
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# ------------------------------------------------------------------ ingress
+ingress:
+  enabled: true
+  className: nginx
+  host: taskflow.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+  # e.g. [{secretName: taskflow-tls, hosts: [taskflow.example.com]}]
+  tls: []
+
+# ------------------------------------------------------- monitoring (Prometheus Operator)
+# These need the CRDs from kube-prometheus-stack, so they are off by default.
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  # kube-prometheus-stack only selects objects with its release label unless
+  # serviceMonitorSelectorNilUsesHelmValues=false (see monitoring/).
+  labels:
+    release: kube-prometheus-stack
+
+prometheusRule:
+  enabled: false
+  labels:
+    release: kube-prometheus-stack
+  errorRateThreshold: 0.05 # 5 % of requests answered with 5xx
+  latencyP95ThresholdSeconds: 0.5
+
+grafanaDashboard:
+  enabled: false
+  # the Grafana sidecar of kube-prometheus-stack loads ConfigMaps with this label
+  labels:
+    grafana_dashboard: "1"
+
+# ------------------------------------------------------------------ security
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

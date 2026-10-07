@@ -1,0 +1,20 @@
+apiVersion: v2
+name: taskflow
+description: >-
+  TaskFlow - React/nginx frontend, FastAPI backend and PostgreSQL, with probes,
+  HPA, Ingress, PVC-backed database and optional Prometheus Operator objects
+  (ServiceMonitor, PrometheusRule, Grafana dashboard).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - fastapi
+  - react
+  - postgresql
+  - devops
+home: https://github.com/Bhuvanesh66/devops-heros
+sources:
+  - https://github.com/Bhuvanesh66/devops-heros/tree/main/final-devops-project
+maintainers:
+  - name: Bhuvanesh M S (24bcs10134)
+    url: https://github.com/Bhuvanesh66

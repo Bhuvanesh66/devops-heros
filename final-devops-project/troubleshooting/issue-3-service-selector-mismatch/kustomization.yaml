@@ -1,0 +1,13 @@
+# Issue 3 - the backend Service selects pods with a label no pod has.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../lab-base
+patches:
+  - target:
+      kind: Service
+      name: taskflow-backend
+    patch: |-
+      - op: replace
+        path: /spec/selector/app.kubernetes.io~1component
+        value: api

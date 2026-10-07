@@ -1,0 +1,32 @@
+# Tool configuration only (the app is not packaged). pytest settings live in pytest.ini.
+[project]
+name = "taskflow-backend"
+version = "1.0.0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["alembic/script.py.mako"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+ignore = [
+  "B008",  # FastAPI's Depends() in argument defaults is the documented pattern
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]  # asserts and throw-away test passwords
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+# the local alembic/ folder is the migrations dir, not the alembic package
+known-third-party = ["alembic"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

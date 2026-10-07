@@ -1,0 +1,16 @@
+# Issue 6 - the Secret was recreated with a different key name (DB_PASS instead
+# of DB_PASSWORD), so the key the pods reference is missing.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../lab-base
+patches:
+  - target:
+      kind: Secret
+      name: taskflow-db
+    patch: |-
+      - op: remove
+        path: /stringData/DB_PASSWORD
+      - op: add
+        path: /stringData/DB_PASS
+        value: demo-only-change-me

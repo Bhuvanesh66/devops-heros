@@ -1,0 +1,67 @@
+{{- if .Values.prometheusRule.enabled }}
+{{- $job := include "taskflow.backend.fullname" . }}
+{{- $ns := .Release.Namespace }}
+# Alerting rules, loaded by the Prometheus Operator and routed to Alertmanager.
+# Same rules as monitoring/prometheus-rules.yaml, templated for this release.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "taskflow.fullname" . }}-alerts
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: taskflow.rules
+      rules:
+        - alert: TaskFlowBackendDown
+          expr: absent(up{namespace="{{ $ns }}", job="{{ $job }}"} == 1)
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No TaskFlow backend target is up in namespace {{ $ns }}"
+            description: "Prometheus cannot scrape any backend pod. Check `kubectl -n {{ $ns }} get pods` and the readiness probe."
+        - alert: TaskFlowHighErrorRate
+          expr: |
+            (sum(rate(http_requests_total{namespace="{{ $ns }}", job="{{ $job }}", status="5xx"}[5m])) or vector(0))
+              / clamp_min(sum(rate(http_requests_total{namespace="{{ $ns }}", job="{{ $job }}"}[5m])), 1e-9)
+              > {{ .Values.prometheusRule.errorRateThreshold }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: {{`"TaskFlow backend 5xx ratio is {{ $value | humanizePercentage }}"`}}
+            description: "More than {{ mulf .Values.prometheusRule.errorRateThreshold 100 }}% of API requests failed with a 5xx status for 5 minutes."
+        - alert: TaskFlowHighLatencyP95
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_request_duration_highr_seconds_bucket{namespace="{{ $ns }}", job="{{ $job }}"}[5m]))
+            ) > {{ .Values.prometheusRule.latencyP95ThresholdSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: {{`"TaskFlow backend p95 latency is {{ $value | humanizeDuration }}"`}}
+            description: "95th percentile request latency above {{ .Values.prometheusRule.latencyP95ThresholdSeconds }}s for 5 minutes."
+        - alert: TaskFlowPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ $ns }}"}[15m]) > 2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: {{`"Pod {{ $labels.pod }} (container {{ $labels.container }}) restarted {{ $value }} times in 15m"`}}
+            description: "Look at `kubectl describe pod` (Last State, exit code) and `kubectl logs --previous`."
+        - alert: TaskFlowHPAAtMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="{{ $ns }}"}
+              >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="{{ $ns }}"}
+          for: 15m
+          labels:
+            severity: info
+          annotations:
+            summary: {{`"HPA {{ $labels.horizontalpodautoscaler }} has been at max replicas for 15m"`}}
+            description: "The workload cannot scale further; raise maxReplicas or investigate the load."
+{{- end }}

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: taskflow
+  labels:
+    app.kubernetes.io/part-of: taskflow
+    # Pod Security Admission: every TaskFlow pod is written to pass "restricted".
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted

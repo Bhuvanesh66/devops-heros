@@ -1,0 +1,13 @@
+# Issue 5 - the readiness probe calls a path the API does not have.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../lab-base
+patches:
+  - target:
+      kind: Deployment
+      name: taskflow-backend
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/readinessProbe/httpGet/path
+        value: /readyz

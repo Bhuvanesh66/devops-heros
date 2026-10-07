@@ -1,0 +1,13 @@
+# Issue 7 - the backend container lost its resources block, so the HPA has no
+# CPU request to compute utilization against.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../lab-base
+patches:
+  - target:
+      kind: Deployment
+      name: taskflow-backend
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/resources

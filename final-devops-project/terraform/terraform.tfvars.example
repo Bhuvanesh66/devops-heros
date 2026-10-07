@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars (git-ignored) and adjust. No credentials here:
+# Terraform reads AWS credentials from your AWS CLI profile / environment.
+aws_region   = "ap-south-1"
+project_name = "taskflow"
+environment  = "dev"
+
+instance_type    = "t3.micro"
+root_volume_size = 20
+
+# Narrow to your own public IP, e.g. ["203.0.113.10/32"]
+allowed_http_cidrs = ["0.0.0.0/0"]
+ssh_cidrs          = []
+key_pair_name      = null
+
+ghcr_owner = "bhuvanesh66"
+image_tag  = "latest" # or the commit SHA CI pushed
+
+enable_ecr = false
+# EKS is NOT free tier. Enable only for the demo, then terraform destroy.
+enable_eks = false

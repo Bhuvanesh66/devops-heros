@@ -1,0 +1,18 @@
+# Both images are built with the build context = final-devops-project/
+# (Dockerfiles live in docker/). Allow-list: only what the images need is sent
+# to the Docker daemon - no tests, no node_modules, no .env, no reports.
+*
+!application/backend/app
+!application/backend/alembic
+!application/backend/alembic.ini
+!application/backend/requirements.txt
+!application/backend/start.sh
+!application/frontend/package.json
+!application/frontend/package-lock.json
+!application/frontend/index.html
+!application/frontend/vite.config.js
+!application/frontend/public
+!application/frontend/src
+!docker/nginx.conf
+**/__pycache__
+**/*.pyc

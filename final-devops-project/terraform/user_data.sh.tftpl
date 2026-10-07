@@ -1,0 +1,99 @@
+#!/bin/bash
+# EC2 user data (runs once, as root, on first boot) - rendered by Terraform.
+# Installs Docker + the compose plugin and starts TaskFlow from the GHCR images.
+# Log: /var/log/taskflow-bootstrap.log
+set -euo pipefail
+exec > >(tee -a /var/log/taskflow-bootstrap.log) 2>&1
+
+COMPOSE_VERSION="v5.6.0"
+APP_DIR=/opt/taskflow
+
+echo "==> installing docker"
+dnf install -y docker openssl
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+echo "==> installing docker compose $COMPOSE_VERSION"
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+  "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-linux-x86_64"
+chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+
+echo "==> writing $APP_DIR"
+mkdir -p "$APP_DIR"
+chmod 0750 "$APP_DIR"
+
+# The database password is generated on the instance and never leaves it
+# (it is not in Terraform state, not in user data, not in Git).
+if [ ! -f "$APP_DIR/.env" ]; then
+  umask 077
+  {
+    echo "POSTGRES_DB=taskflow"
+    echo "POSTGRES_USER=taskflow"
+    echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+    echo "IMAGE_TAG=${image_tag}"
+  } > "$APP_DIR/.env"
+fi
+
+cat > "$APP_DIR/docker-compose.yml" <<'COMPOSE'
+name: taskflow
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    image: ghcr.io/${ghcr_owner}/final-taskflow-backend:$${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}
+      APP_ENV: ec2
+      RUN_MIGRATIONS: "true"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/${ghcr_owner}/final-taskflow-frontend:$${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:8080"
+
+volumes:
+  pgdata:
+COMPOSE
+
+echo "==> starting TaskFlow (images tagged ${image_tag})"
+cd "$APP_DIR"
+# Retry: the network or GHCR can be briefly unavailable right after boot.
+for attempt in 1 2 3 4 5; do
+  if docker compose pull && docker compose up -d; then
+    break
+  fi
+  echo "attempt $attempt failed, retrying in 15s"
+  sleep 15
+done
+docker compose ps
+echo "==> bootstrap finished"

@@ -1,0 +1,11 @@
+# Bandit (Python SAST) configuration for the TaskFlow backend.
+#   bandit -c security/bandit.yaml -r application/backend
+# Tests use assert on purpose and are not shipped in the image.
+exclude_dirs:
+  - application/backend/tests
+  - application/backend/.venv
+  - tests
+  - .venv
+# No skipped checks: every Bandit test runs. The security gate blocks on
+# HIGH severity findings (confidence MEDIUM or HIGH).
+skips: []

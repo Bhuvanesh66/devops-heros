@@ -1,0 +1,777 @@
+# mirror of /.github/workflows/final-devops-project.yml - edit the original, not this copy
+# Final DevOps Project - TaskFlow
+# Author: Bhuvanesh M S (24bcs10134)
+#
+#   lint-test ──┐                 ┌─ sast ────────┐
+#   validate-iac┴─ docker-build ─ │  sca          ├─ security-gate ─ push-images ─ deploy (kind + Helm)
+#                    └─ image-scan┘  secret-scan ─┘
+#
+# Every scanner runs in "report only" mode and uploads a JSON report. The
+# security-gate job is the single place that decides PASS/FAIL (policy in
+# final-devops-project/security/gate.py). The image tars that were scanned are
+# exactly the images that are pushed to GHCR and deployed to Kubernetes.
+
+name: Final DevOps Project - CI/CD + DevSecOps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "final-devops-project/**"
+      - ".github/workflows/final-devops-project.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "final-devops-project/**"
+      - ".github/workflows/final-devops-project.yml"
+  workflow_dispatch:
+
+# Least privilege by default; jobs that need more ask for it themselves.
+permissions:
+  contents: read
+
+concurrency:
+  group: final-devops-project-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_DIR: final-devops-project
+  BACKEND_IMAGE: ghcr.io/bhuvanesh66/final-taskflow-backend
+  FRONTEND_IMAGE: ghcr.io/bhuvanesh66/final-taskflow-frontend
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "24"
+  SEMGREP_IMAGE: semgrep/semgrep:1.179.0
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1
+  TRIVY_VERSION: v0.75.0
+  KUBECONFORM_VERSION: v0.8.0
+
+defaults:
+  run:
+    shell: bash
+    working-directory: final-devops-project
+
+jobs:
+  # ------------------------------------------------------- 1. LINT + UNIT TEST
+  lint-test:
+    name: Lint & Test (backend + frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: final-devops-project/application/backend/requirements*.txt
+
+      - name: Install backend dependencies
+        working-directory: final-devops-project/application/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint backend (ruff)
+        working-directory: final-devops-project/application/backend
+        run: |
+          ruff check --output-format=github .
+          ruff format --check .
+
+      - name: Test backend (pytest on SQLite, with coverage)
+        working-directory: final-devops-project/application/backend
+        run: |
+          mkdir -p reports
+          pytest -v \
+            --junitxml=reports/junit.xml \
+            --cov --cov-report=term-missing --cov-report=xml:reports/coverage.xml
+
+      - name: Write test summary
+        if: always()
+        working-directory: final-devops-project/application/backend
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+          print("### Backend tests (pytest)")
+          try:
+              root = ET.parse("reports/junit.xml").getroot()
+          except (FileNotFoundError, ET.ParseError):
+              print("No JUnit report was produced.")
+              raise SystemExit(0)
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          tests, failures = int(suite.get("tests", 0)), int(suite.get("failures", 0))
+          errors, skipped = int(suite.get("errors", 0)), int(suite.get("skipped", 0))
+          print("| Total | Passed | Failed | Errors | Skipped | Time (s) |")
+          print("|------:|-------:|-------:|-------:|--------:|---------:|")
+          print(f"| {tests} | {tests - failures - errors - skipped} | {failures} | {errors} | {skipped} | {suite.get('time')} |")
+          try:
+              cov = ET.parse("reports/coverage.xml").getroot()
+              print(f"\n**Line coverage:** {float(cov.get('line-rate', 0)) * 100:.1f}%")
+          except (FileNotFoundError, ET.ParseError):
+              pass
+          PY
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: final-devops-project/application/frontend/package-lock.json
+
+      - name: Build frontend (npm ci + vite build)
+        working-directory: final-devops-project/application/frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          ls -la dist dist/assets
+
+      - name: Upload test reports and frontend build
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: |
+            final-devops-project/application/backend/reports/
+            final-devops-project/application/frontend/dist/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ------------------------------------------- 2. VALIDATE IaC (Helm, k8s, TF)
+  validate-iac:
+    name: Validate Helm, Kubernetes & Terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" kubeconform
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Helm lint (dev and prod values)
+        run: |
+          helm lint helm/taskflow -f helm/taskflow/values-dev.yaml
+          helm lint helm/taskflow -f helm/taskflow/values-prod.yaml
+
+      - name: Render and schema-check manifests (kubeconform)
+        run: |
+          mkdir -p "$RUNNER_TEMP/rendered"
+          helm template taskflow helm/taskflow -n taskflow -f helm/taskflow/values-dev.yaml > "$RUNNER_TEMP/rendered/helm-dev.yaml"
+          helm template taskflow helm/taskflow -n taskflow -f helm/taskflow/values-prod.yaml > "$RUNNER_TEMP/rendered/helm-prod.yaml"
+          kubectl kustomize kubernetes > "$RUNNER_TEMP/rendered/kustomize.yaml"
+          for overlay in troubleshooting/lab-base troubleshooting/issue-*; do
+            kubectl kustomize "$overlay" > "$RUNNER_TEMP/rendered/$(basename "$overlay").yaml"
+          done
+          CRDS='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          kubeconform -strict -summary -schema-location default -schema-location "$CRDS" \
+            "$RUNNER_TEMP/rendered" monitoring/servicemonitor.yaml monitoring/prometheus-rules.yaml \
+            monitoring/grafana-dashboard-configmap.yaml gitops/argocd-application.yaml
+
+      - name: Grafana dashboard copies are identical
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+          src = json.load(open("monitoring/grafana-dashboard.json"))
+          chart = json.load(open("helm/taskflow/files/taskflow-dashboard.json"))
+          cm = open("monitoring/grafana-dashboard-configmap.yaml").read()
+          embedded = json.loads(re.sub(r"(?m)^    ", "", cm.split("taskflow-dashboard.json: |", 1)[1]))
+          if not (src == chart == embedded):
+              sys.exit("Grafana dashboard JSON differs between monitoring/ and helm/taskflow/files/")
+          print(f"dashboard '{src['title']}' with {len(src['panels'])} panels is identical in all 3 places")
+          PY
+
+      - name: Terraform fmt + validate (no AWS credentials needed)
+        working-directory: final-devops-project/terraform
+        run: |
+          terraform fmt -check -recursive -diff
+          terraform init -backend=false -input=false
+          terraform validate
+
+  # --------------------------------------------------------------- 3. SAST
+  sast:
+    name: SAST (Semgrep + Bandit)
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to the Security > Code scanning tab
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Semgrep (report only, the gate decides)
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p "$APP_DIR/reports"
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src "$SEMGREP_IMAGE" \
+            semgrep scan --metrics=off \
+              --config p/python \
+              --config p/javascript \
+              --config p/dockerfile \
+              --config "$APP_DIR/security/semgrep-rules.yml" \
+              --exclude node_modules --exclude dist --exclude reports \
+              --json-output "$APP_DIR/reports/semgrep.json" \
+              --sarif-output "$APP_DIR/reports/semgrep.sarif" \
+              "$APP_DIR"
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Bandit (report only)
+        run: |
+          pip install bandit==1.9.4
+          mkdir -p reports
+          bandit -c security/bandit.yaml -r application/backend -f json -o reports/bandit.json --exit-zero
+          bandit -c security/bandit.yaml -r application/backend --exit-zero
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        continue-on-error: true # code scanning is a nice-to-have view; the gate is the decision
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: final-devops-project/reports/semgrep.sarif
+          category: final-semgrep
+
+      - name: Upload SAST reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-sast
+          path: |
+            final-devops-project/reports/semgrep.json
+            final-devops-project/reports/semgrep.sarif
+            final-devops-project/reports/bandit.json
+          retention-days: 14
+
+  # ---------------------------------------------------------------- 4. SCA
+  sca:
+    name: SCA (pip-audit + npm audit + Trivy fs)
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # reports/ is git-ignored, so it does not exist on a fresh runner and the
+      # tools below do not create missing parent directories themselves.
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: pip-audit (backend requirements)
+        run: |
+          pip install pip-audit==2.10.1
+          # exits non-zero when it finds something; keep the report, let the gate decide
+          pip-audit -r application/backend/requirements.txt -f json -o reports/pip-audit.json || true
+          pip-audit -r application/backend/requirements.txt || true
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: npm audit (frontend lockfile)
+        working-directory: final-devops-project/application/frontend
+        run: |
+          npm audit --json > ../../reports/npm-audit.json || true
+          npm audit --audit-level=high || true
+
+      - name: Trivy filesystem scan (JSON report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: fs
+          scan-ref: final-devops-project
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: final-devops-project/security/.trivyignore
+          format: json
+          output: final-devops-project/reports/trivy-fs.json
+          exit-code: "0"
+
+      - name: Trivy filesystem scan (table for the log)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          scan-type: fs
+          scan-ref: final-devops-project
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: final-devops-project/security/.trivyignore
+          format: table
+          exit-code: "0"
+
+      - name: Upload SCA reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-sca
+          path: |
+            final-devops-project/reports/pip-audit.json
+            final-devops-project/reports/npm-audit.json
+            final-devops-project/reports/trivy-fs.json
+          retention-days: 14
+
+  # -------------------------------------------------------- 5. SECRET SCAN
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Scoped to this project on purpose: other folders of this course repo
+      # contain intentionally fake demo secrets (Kubernetes Secret examples).
+      - name: Gitleaks - current files
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p "$APP_DIR/reports"
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo" "$GITLEAKS_IMAGE" \
+            dir "/repo/$APP_DIR" \
+            --config "/repo/$APP_DIR/security/.gitleaks.toml" \
+            --report-format json --report-path "/repo/$APP_DIR/reports/gitleaks-dir.json" \
+            --redact --verbose --no-banner --exit-code 0
+
+      - name: Gitleaks - git history of this project
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo" "$GITLEAKS_IMAGE" \
+            git /repo \
+            --log-opts="HEAD -- $APP_DIR .github/workflows/final-devops-project.yml" \
+            --config "/repo/$APP_DIR/security/.gitleaks.toml" \
+            --gitleaks-ignore-path "/repo/$APP_DIR/security/.gitleaksignore" \
+            --report-format json --report-path "/repo/$APP_DIR/reports/gitleaks-git.json" \
+            --redact --verbose --no-banner --exit-code 0
+
+      - name: Upload secret scan reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-secrets
+          path: final-devops-project/reports/gitleaks-*.json
+          retention-days: 14
+
+  # ------------------------------------------------------- 6. DOCKER BUILD
+  docker-build:
+    name: Docker Build (backend + frontend)
+    needs: [lint-test, validate-iac]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      backend-id: ${{ steps.ids.outputs.backend-id }}
+      frontend-id: ${{ steps.ids.outputs.frontend-id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Image metadata (backend)
+        id: meta-backend
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest
+
+      - name: Image metadata (frontend)
+        id: meta-frontend
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest
+
+      # Build context = final-devops-project/ for both; the Dockerfiles live in docker/.
+      - name: Build backend image to a tar (not pushed yet)
+        uses: docker/build-push-action@v7
+        with:
+          context: final-devops-project
+          file: final-devops-project/docker/backend.Dockerfile
+          push: false
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          outputs: type=docker,dest=${{ runner.temp }}/backend.tar
+          cache-from: type=gha,scope=final-backend
+          cache-to: type=gha,mode=max,scope=final-backend
+
+      - name: Build frontend image to a tar (not pushed yet)
+        uses: docker/build-push-action@v7
+        with:
+          context: final-devops-project
+          file: final-devops-project/docker/frontend.Dockerfile
+          push: false
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          outputs: type=docker,dest=${{ runner.temp }}/frontend.tar
+          cache-from: type=gha,scope=final-frontend
+          cache-to: type=gha,mode=max,scope=final-frontend
+
+      - name: Load images and record their IDs
+        id: ids
+        run: |
+          docker load --input "$RUNNER_TEMP/backend.tar"
+          docker load --input "$RUNNER_TEMP/frontend.tar"
+          BACKEND_ID=$(docker image inspect --format '{{.Id}}' "$BACKEND_IMAGE:$GITHUB_SHA")
+          FRONTEND_ID=$(docker image inspect --format '{{.Id}}' "$FRONTEND_IMAGE:$GITHUB_SHA")
+          echo "backend-id=$BACKEND_ID" >> "$GITHUB_OUTPUT"
+          echo "frontend-id=$FRONTEND_ID" >> "$GITHUB_OUTPUT"
+          docker image ls --filter "reference=ghcr.io/bhuvanesh66/final-taskflow-*"
+
+      - name: Smoke test the containers (backend on SQLite, frontend proxying /api)
+        run: |
+          docker network create smoke
+          docker run -d --name backend --network smoke --read-only --tmpfs /tmp --cap-drop ALL \
+            -e DATABASE_URL=sqlite:////tmp/taskflow.db -p 8000:8000 "$BACKEND_IMAGE:$GITHUB_SHA"
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8000/health; echo
+          curl -fsS http://localhost:8000/ready; echo
+          curl -fsS -X POST http://localhost:8000/api/tasks -H 'Content-Type: application/json' \
+            -d '{"title":"built by GitHub Actions","priority":"high"}'; echo
+
+          docker run -d --name frontend --network smoke --read-only --tmpfs /tmp \
+            --cap-drop ALL -e BACKEND_URL=http://backend:8000 -p 8080:8080 "$FRONTEND_IMAGE:$GITHUB_SHA"
+          for _ in $(seq 1 20); do
+            if curl -fsS http://localhost:8080/healthz > /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          echo "frontend serves index.html"
+          curl -fsS http://localhost:8080/api/tasks; echo
+          echo "backend runs as:  $(docker exec backend id)"
+          echo "frontend runs as: $(docker exec frontend id)"
+
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          docker logs backend || true
+          docker logs frontend || true
+
+      - name: Upload backend image tar
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-backend
+          path: ${{ runner.temp }}/backend.tar
+          retention-days: 1
+
+      - name: Upload frontend image tar
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-frontend
+          path: ${{ runner.temp }}/frontend.tar
+          retention-days: 1
+
+  # ------------------------------------------------ 7. CONTAINER IMAGE SCAN
+  image-scan:
+    name: Image Scan (Trivy) - ${{ matrix.image }}
+    needs: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [backend, frontend]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download image tar
+        uses: actions/download-artifact@v8
+        with:
+          name: image-${{ matrix.image }}
+          path: ${{ runner.temp }}
+
+      # Trivy does not create missing parent directories for --output, and
+      # reports/ is git-ignored, so it does not exist on a fresh runner.
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Trivy image scan (JSON report for the gate)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          input: ${{ runner.temp }}/${{ matrix.image }}.tar
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: final-devops-project/security/.trivyignore
+          format: json
+          output: final-devops-project/reports/trivy-image-${{ matrix.image }}.json
+          exit-code: "0"
+
+      - name: Trivy image scan (table for the log, all severities)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          input: ${{ runner.temp }}/${{ matrix.image }}.tar
+          scanners: vuln,secret
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          trivyignores: final-devops-project/security/.trivyignore
+          format: table
+          exit-code: "0"
+
+      - name: Trivy image scan (SARIF for code scanning)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          input: ${{ runner.temp }}/${{ matrix.image }}.tar
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          limit-severities-for-sarif: true
+          trivyignores: final-devops-project/security/.trivyignore
+          format: sarif
+          output: final-devops-project/reports/trivy-image-${{ matrix.image }}.sarif
+          exit-code: "0"
+
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          input: ${{ runner.temp }}/${{ matrix.image }}.tar
+          format: cyclonedx
+          output: final-devops-project/reports/sbom-${{ matrix.image }}.cdx.json
+          exit-code: "0"
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: final-devops-project/reports/trivy-image-${{ matrix.image }}.sarif
+          category: final-trivy-${{ matrix.image }}
+
+      - name: Upload image scan reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-image-${{ matrix.image }}
+          path: |
+            final-devops-project/reports/trivy-image-${{ matrix.image }}.json
+            final-devops-project/reports/trivy-image-${{ matrix.image }}.sarif
+            final-devops-project/reports/sbom-${{ matrix.image }}.cdx.json
+          retention-days: 14
+
+  # ----------------------------------------------------- 8. SECURITY GATE
+  security-gate:
+    name: Security Gate
+    needs: [sast, sca, secret-scan, image-scan]
+    # Run even when an earlier job failed, so the summary always shows what
+    # happened. A missing report counts as FAIL, so it never passes by accident.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download all scan reports
+        continue-on-error: true # a missing report is handled (as FAIL) by the gate itself
+        uses: actions/download-artifact@v8
+        with:
+          pattern: reports-*
+          path: final-devops-project/reports
+          merge-multiple: true
+
+      - name: List reports
+        run: ls -la reports || true
+
+      - name: Evaluate security policy
+        run: python3 security/gate.py reports
+
+      - name: Upload gate result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-gate-result
+          path: |
+            final-devops-project/reports/gate-summary.md
+            final-devops-project/reports/gate-result.json
+          retention-days: 14
+
+  # ------------------------------------------------------ 9. PUSH IMAGES
+  push-images:
+    name: Push Images (GHCR)
+    needs: [docker-build, security-gate]
+    # Only publish from main (push or manual run), never from pull requests.
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download the scanned image tars
+        uses: actions/download-artifact@v8
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}
+          merge-multiple: true
+
+      - name: Load images and verify they are the ones that were scanned
+        working-directory: ${{ runner.temp }}
+        env:
+          EXPECTED_BACKEND: ${{ needs.docker-build.outputs.backend-id }}
+          EXPECTED_FRONTEND: ${{ needs.docker-build.outputs.frontend-id }}
+        run: |
+          docker load --input backend.tar
+          docker load --input frontend.tar
+          test "$(docker image inspect --format '{{.Id}}' "$BACKEND_IMAGE:$GITHUB_SHA")" = "$EXPECTED_BACKEND"
+          test "$(docker image inspect --format '{{.Id}}' "$FRONTEND_IMAGE:$GITHUB_SHA")" = "$EXPECTED_FRONTEND"
+          echo "image IDs match the scanned build"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push images (commit SHA + latest)
+        working-directory: ${{ runner.temp }}
+        run: |
+          {
+            echo "## Images pushed to GHCR"
+            echo ""
+            echo "| Image | Commit tag | Digest |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for image in "$BACKEND_IMAGE" "$FRONTEND_IMAGE"; do
+            docker push "$image:$GITHUB_SHA" | tee push.log
+            docker push "$image:latest"
+            digest=$(grep -o 'digest: sha256:[0-9a-f]*' push.log | head -n1 | cut -d' ' -f2)
+            echo "| \`$image\` | \`$GITHUB_SHA\` | \`$digest\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  # ------------------------------------------- 10. DEPLOY TO KUBERNETES (kind)
+  deploy:
+    name: Deploy to Kubernetes (kind + Helm)
+    needs: push-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: development
+    env:
+      NAMESPACE: taskflow
+      CLUSTER: final-taskflow
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download the scanned image tars
+        uses: actions/download-artifact@v8
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}
+          merge-multiple: true
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+
+      # GHCR packages are private by default, so instead of giving the cluster
+      # registry credentials the exact scanned images are side-loaded into the node.
+      - name: Load the images into the cluster
+        run: |
+          kind load image-archive "$RUNNER_TEMP/backend.tar" --name "$CLUSTER"
+          kind load image-archive "$RUNNER_TEMP/frontend.tar" --name "$CLUSTER"
+          docker exec "$CLUSTER-control-plane" crictl images | grep final-taskflow
+
+      - name: Helm install the chart (images pinned to this commit)
+        run: |
+          helm upgrade --install taskflow helm/taskflow \
+            --namespace "$NAMESPACE" --create-namespace \
+            --set backend.image.tag="$GITHUB_SHA" \
+            --set frontend.image.tag="$GITHUB_SHA" \
+            --set database.password="$(openssl rand -hex 16)" \
+            --wait --timeout 6m
+          helm list -n "$NAMESPACE"
+
+      - name: Smoke test through the Services
+        run: |
+          kubectl -n "$NAMESPACE" port-forward svc/taskflow-backend 8000:8000 > /tmp/pf-backend.log 2>&1 &
+          kubectl -n "$NAMESPACE" port-forward svc/taskflow-frontend 8080:80 > /tmp/pf-frontend.log 2>&1 &
+          trap 'kill $(jobs -p)' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health > /dev/null && curl -fsS http://localhost:8080/healthz > /dev/null; then break; fi
+            sleep 1
+          done
+          echo "GET /health";  curl -fsS http://localhost:8000/health; echo
+          echo "GET /ready";   curl -fsS http://localhost:8000/ready; echo
+          echo "POST /api/tasks (backend Service)"
+          curl -fsS -X POST http://localhost:8000/api/tasks -H 'Content-Type: application/json' \
+            -d '{"title":"deployed by GitHub Actions","priority":"high"}'; echo
+          echo "POST /api/tasks (through the frontend nginx proxy)"
+          curl -fsS -X POST http://localhost:8080/api/tasks -H 'Content-Type: application/json' \
+            -d '{"title":"created through the frontend proxy"}'; echo
+          echo "GET /api/tasks (through the frontend nginx proxy)"
+          curl -fsS http://localhost:8080/api/tasks | tee /tmp/tasks.json; echo
+          test "$(python3 -c 'import json; print(len(json.load(open("/tmp/tasks.json"))))')" -ge 2
+          echo "GET /api/stats"; curl -fsS http://localhost:8080/api/stats; echo
+          echo "GET /metrics (first lines)"; curl -fsS http://localhost:8000/metrics | grep -m5 '^http_requests_total'
+
+      - name: Helm test
+        run: helm test taskflow -n "$NAMESPACE" --logs
+
+      - name: Show deployed resources
+        if: always()
+        run: |
+          kubectl -n "$NAMESPACE" get all,pvc,hpa,ingress,configmap,secret -o wide
+          kubectl -n "$NAMESPACE" get deploy -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
+          {
+            echo "## Deployed to Kubernetes (kind) with Helm"
+            echo ""
+            echo '```'
+            helm list -n "$NAMESPACE"
+            echo ""
+            kubectl -n "$NAMESPACE" get deploy,statefulset,pods,svc,pvc,hpa -o wide
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          kubectl -n "$NAMESPACE" describe pods || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp || true
+          kubectl -n "$NAMESPACE" logs -l app.kubernetes.io/component=backend --all-containers --tail=80 || true
+          kubectl -n "$NAMESPACE" logs -l app.kubernetes.io/component=frontend --tail=50 || true
+          kubectl -n "$NAMESPACE" logs -l app.kubernetes.io/component=postgres --tail=50 || true

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "taskflow.fullname" . }}-config
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+data:
+  APP_ENV: {{ .Values.backend.appEnv | quote }}
+  LOG_LEVEL: {{ .Values.backend.logLevel | quote }}
+  DB_HOST: {{ include "taskflow.dbHost" . | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  # migrations run in the initContainer when enabled, not in the app container
+  RUN_MIGRATIONS: {{ ternary "false" "true" .Values.backend.migrations.enabled | quote }}
+  BACKEND_URL: {{ printf "http://%s:%v" (include "taskflow.backend.fullname" .) .Values.backend.service.port | quote }}

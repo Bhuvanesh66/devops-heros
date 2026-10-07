@@ -1,0 +1,64 @@
+# Alerting rules for the plain-manifest deployment (namespace taskflow).
+# The Helm chart renders the same rules (templates/prometheusrule.yaml) when
+# prometheusRule.enabled=true - use one or the other, not both.
+#   kubectl apply -f final-devops-project/monitoring/prometheus-rules.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: taskflow-alerts
+  namespace: taskflow
+  labels:
+    app.kubernetes.io/part-of: taskflow
+    release: kube-prometheus-stack
+spec:
+  groups:
+  - name: taskflow.rules
+    rules:
+    - alert: TaskFlowBackendDown
+      expr: absent(up{namespace="taskflow", job="taskflow-backend"} == 1)
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: No TaskFlow backend target is up in namespace taskflow
+        description: Prometheus cannot scrape any backend pod. Check `kubectl -n taskflow get pods` and the readiness probe.
+    - alert: TaskFlowHighErrorRate
+      expr: |
+        (sum(rate(http_requests_total{namespace="taskflow", job="taskflow-backend", status="5xx"}[5m])) or vector(0))
+          / clamp_min(sum(rate(http_requests_total{namespace="taskflow", job="taskflow-backend"}[5m])), 1e-9)
+          > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: TaskFlow backend 5xx ratio is {{ $value | humanizePercentage }}
+        description: More than 5% of API requests failed with a 5xx status for 5 minutes.
+    - alert: TaskFlowHighLatencyP95
+      expr: |
+        histogram_quantile(0.95,
+          sum by (le) (rate(http_request_duration_highr_seconds_bucket{namespace="taskflow", job="taskflow-backend"}[5m]))
+        ) > 0.5
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: TaskFlow backend p95 latency is {{ $value | humanizeDuration }}
+        description: 95th percentile request latency above 0.5s for 5 minutes.
+    - alert: TaskFlowPodRestarting
+      expr: increase(kube_pod_container_status_restarts_total{namespace="taskflow"}[15m]) > 2
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: Pod {{ $labels.pod }} (container {{ $labels.container }}) restarted {{ $value }} times in 15m
+        description: Look at `kubectl describe pod` (Last State, exit code) and `kubectl logs --previous`.
+    - alert: TaskFlowHPAAtMaxReplicas
+      expr: |
+        kube_horizontalpodautoscaler_status_current_replicas{namespace="taskflow"}
+          >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="taskflow"}
+      for: 15m
+      labels:
+        severity: info
+      annotations:
+        summary: HPA {{ $labels.horizontalpodautoscaler }} has been at max replicas for 15m
+        description: The workload cannot scale further; raise maxReplicas or investigate the load.

@@ -1,0 +1,14 @@
+# Issue 8 - nginx in the frontend is told to proxy /api to a Service name that
+# does not exist.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../lab-base
+patches:
+  - target:
+      kind: ConfigMap
+      name: taskflow-config
+    patch: |-
+      - op: replace
+        path: /data/BACKEND_URL
+        value: http://taskflow-api:8000

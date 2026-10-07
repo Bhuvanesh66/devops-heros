@@ -1,0 +1,63 @@
+# Production-style overlay. The image tag must be pinned to a commit SHA
+# (helm upgrade ... --set backend.image.tag=<sha> --set frontend.image.tag=<sha>),
+# and the DB credentials come from a Secret created out of band:
+#
+#   kubectl -n taskflow create secret generic taskflow-db-credentials \
+#     --from-literal=DB_USER=taskflow \
+#     --from-literal=DB_PASSWORD="$(openssl rand -base64 24)"
+
+backend:
+  image:
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  logLevel: INFO
+  appEnv: production
+  resources:
+    requests:
+      cpu: 250m
+      memory: 192Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 10
+
+frontend:
+  replicaCount: 3
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 6
+
+imagePullSecrets:
+  - name: ghcr-pull
+
+database:
+  existingSecret: taskflow-db-credentials
+
+postgres:
+  persistence:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+ingress:
+  host: taskflow.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  tls:
+    - secretName: taskflow-tls
+      hosts:
+        - taskflow.example.com
+
+serviceMonitor:
+  enabled: true
+prometheusRule:
+  enabled: true
+grafanaDashboard:
+  enabled: true

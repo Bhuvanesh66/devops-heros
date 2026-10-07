@@ -1,0 +1,23 @@
+TaskFlow {{ .Chart.AppVersion }} is deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Images:
+  backend : {{ include "taskflow.backend.image" . }}
+  frontend: {{ include "taskflow.frontend.image" . }}
+
+Check the rollout:
+  kubectl -n {{ .Release.Namespace }} get pods,svc,hpa,pvc,ingress
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "taskflow.backend.fullname" . }}
+
+{{- if .Values.ingress.enabled }}
+
+Open the app through the Ingress (add "<ingress IP> {{ .Values.ingress.host }}" to your hosts file):
+  http://{{ .Values.ingress.host }}/
+  http://{{ .Values.ingress.host }}/api/tasks
+{{- end }}
+
+Without an Ingress:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "taskflow.frontend.fullname" . }} 8080:{{ .Values.frontend.service.port }}
+  then open http://localhost:8080
+
+Run the chart tests:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

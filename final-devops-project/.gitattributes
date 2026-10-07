@@ -1,0 +1,5 @@
+# Shell scripts, manifests and configs must keep LF endings even on a Windows
+# checkout (a CRLF start.sh breaks the container entrypoint).
+* text=auto eol=lf
+*.png binary
+*.jpg binary

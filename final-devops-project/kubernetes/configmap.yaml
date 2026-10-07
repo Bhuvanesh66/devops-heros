@@ -1,0 +1,19 @@
+# Non-secret configuration. The backend assembles its database URL from
+# DB_HOST/DB_PORT/DB_NAME (here) + DB_USER/DB_PASSWORD (Secret taskflow-db).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-config
+  labels:
+    app.kubernetes.io/name: taskflow
+    app.kubernetes.io/part-of: taskflow
+data:
+  APP_ENV: kubernetes
+  LOG_LEVEL: INFO
+  DB_HOST: taskflow-postgres
+  DB_PORT: "5432"
+  DB_NAME: taskflow
+  # migrations run once per rollout in the initContainer, not in the app container
+  RUN_MIGRATIONS: "false"
+  # where the frontend's nginx proxies /api (the backend Service)
+  BACKEND_URL: http://taskflow-backend:8000

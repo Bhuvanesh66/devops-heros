@@ -1,0 +1,83 @@
+# TaskFlow - full stack on one machine: PostgreSQL + FastAPI backend + React/nginx frontend.
+#
+#   cd final-devops-project/docker
+#   cp .env.example .env          # optional, the defaults below work for a local demo
+#   docker compose up --build
+#
+#   UI      http://localhost:3000          (nginx, proxies /api to the backend)
+#   API     http://localhost:8000/docs     (FastAPI Swagger UI)
+#   Metrics http://localhost:8000/metrics
+#
+# Both images are built with the build context = final-devops-project/ (one level up),
+# using the Dockerfiles in this folder.
+
+name: taskflow
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-taskflow}
+      POSTGRES_USER: ${POSTGRES_USER:-taskflow}
+      # Local demo default only. Set POSTGRES_PASSWORD in docker/.env for anything else.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskflow-local}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend-net]
+
+  backend:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    image: taskflow-backend:local
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-taskflow}:${POSTGRES_PASSWORD:-taskflow-local}@postgres:5432/${POSTGRES_DB:-taskflow}
+      APP_ENV: compose
+      LOG_LEVEL: INFO
+      RUN_MIGRATIONS: "true"
+    tmpfs:
+      - /tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks: [backend-net, frontend-net]
+
+  frontend:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
+    image: taskflow-frontend:local
+    environment:
+      BACKEND_URL: http://backend:8000
+    tmpfs:
+      # pid/temp files and the nginx config rendered from the BACKEND_URL template
+      - /tmp
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:8080"
+    networks: [frontend-net]
+
+volumes:
+  pgdata:
+
+networks:
+  backend-net:
+  frontend-net:
