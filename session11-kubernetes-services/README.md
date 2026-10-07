@@ -34,12 +34,26 @@ session11-kubernetes-services/
 ├── 04-externalname.yaml        a CNAME to an external host
 ├── 05-headless.yaml            clusterIP: None
 ├── statefulset-headless.yaml   StatefulSet + headless Service, for stable per-Pod DNS
-└── dns-test/curl-test-pod.yaml a netshoot Pod with curl/dig/nslookup
+├── dns-test/curl-test-pod.yaml a netshoot Pod with curl/dig/nslookup
+├── comparisons.md              Task 2 - workload and Service comparisons
+├── fqdn/README.md              Task 3 - FQDN and Service DNS
+└── coredns/README.md           Task 4 - CoreDNS and DNS troubleshooting
 ```
 
 The backend is an **echo server**, which replies with the name of the Pod that served the
 request. That is what makes load balancing visible instead of something you have to take on
 trust.
+
+## Deliverables
+
+The Session 11 brief also asks for three written deliverables as separate documents. They
+build on the evidence in this README and embed the same screenshots:
+
+| Task | Document | What it covers |
+| ---- | -------- | -------------- |
+| Task 2 | [comparisons.md](comparisons.md) | Deployment vs ReplicaSet, Deployment vs DaemonSet vs StatefulSet, ReplicaSet vs Service (with a traffic-flow diagram) |
+| Task 3 | [fqdn/README.md](fqdn/README.md) | What an FQDN is, Service DNS, naming convention, namespace-based DNS, Pod-to-Service communication, FQDN examples (A, headless, SRV, Pod, CNAME) |
+| Task 4 | [coredns/README.md](coredns/README.md) | What CoreDNS is, why Kubernetes uses it, service discovery, query resolution, every Corefile plugin, a step-by-step DNS troubleshooting checklist |
 
 ---
 
@@ -88,7 +102,7 @@ rewrites the destination to a Pod IP on `:8080`.
 
 ---
 
-# Part 2 — The four Service types
+# Part 2 — The five Service types
 
 ## ClusterIP (the default)
 
@@ -146,6 +160,23 @@ or hostname routing. It is a debugging and dev tool.
 ## LoadBalancer
 
 ![LoadBalancer pending](images/04-loadbalancer.png)
+
+### LoadBalancer connectivity test (minikube `metallb` addon)
+
+`<pending>` means no controller exists to hand out an external IP: on a cloud that's the
+cloud controller manager, but bare minikube has none. Instead of `minikube tunnel` (which
+needs root to add routes), I gave the cluster a real load-balancer implementation: the
+**MetalLB** addon, with an address pool on the minikube Docker network (`192.168.49.100-120`).
+
+![LoadBalancer gets an EXTERNAL-IP from MetalLB and answers on it](images/13-loadbalancer-metallb.png)
+
+- Before MetalLB: `EXTERNAL-IP <pending>`. After: **`192.168.49.100`**, port 80, with the
+  nodePort `30928` still allocated underneath (a LoadBalancer Service is a NodePort Service
+  plus an external address).
+- `curl http://192.168.49.100/` from the WSL host returns `Request served by
+  yatri-backend-...`, and so does a request from **inside** the cluster to the same external IP.
+- This is how bare-metal clusters get `type: LoadBalancer` in practice. On EKS, the AWS Load
+  Balancer Controller does the same job by creating an NLB.
 
 ```
 NAME                 TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)
@@ -484,8 +515,10 @@ kubectl delete namespace shop
 
 | Homework item | Status |
 | ------------- | ------ |
-| Research FQDN — what it is, why it matters | Done — Part 3 |
-| Research CoreDNS — what it is, the Corefile | Done — Part 3 |
+| Task 2: Deployment vs ReplicaSet, Deployment vs DaemonSet vs StatefulSet, ReplicaSet vs Service | Done — [comparisons.md](comparisons.md) |
+| Research FQDN — what it is, why it matters | Done — Part 3 + [fqdn/README.md](fqdn/README.md) (Task 3) |
+| Research CoreDNS — what it is, the Corefile | Done — Part 3 + [coredns/README.md](coredns/README.md) (Task 4) |
+| DNS troubleshooting checklist | Done — [coredns/README.md](coredns/README.md#6-how-to-troubleshoot-dns-issues) |
 | How internal DNS resolution actually works | Done — Part 3 (`resolv.conf`, search list, `ndots:5`) |
 | Why it is needed / how it resolves automatically | Done — Part 3 |
 | ClusterIP | Done — Part 2 |
