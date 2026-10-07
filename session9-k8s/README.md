@@ -349,6 +349,64 @@ Everything above the Pod row in that table exists to fix some aspect of that.
 
 ---
 
+## Task 8 — The Kubernetes Basics tutorial, hands-on (all six modules)
+
+The brief asks for the official [Learn Kubernetes Basics](https://kubernetes.io/docs/tutorials/kubernetes-basics/)
+tutorial to be done hands-on. Hello Minikube (Task 6) covers part of it, so here are all six
+modules run on my cluster with the tutorial's own app, `kubernetes-bootcamp`.
+
+> **Image note.** The first attempt used `gcr.io/k8s-minikube/kubernetes-bootcamp:v1` and got
+> `ImagePullBackOff`, because that image can no longer be pulled. I used the same app's
+> published copy on Docker Hub, `docker.io/jocatalin/kubernetes-bootcamp:v1` (and `:v2`, which
+> the tutorial itself uses for the update module).
+
+### Modules 1–2: the cluster, and deploying an app
+
+![Cluster status and kubectl create deployment](images/10-basics-1-2-cluster-deploy.png)
+
+`kubectl create deployment` created a Deployment, which created a ReplicaSet, which created
+one Pod. It was `1/1` available within seconds.
+
+### Module 3: exploring the app
+
+![get, describe, kubectl proxy, logs and exec on the running Pod](images/11-basics-3-explore.png)
+
+- `kubectl proxy` opens the API server on `localhost:8001`, and the URL
+  `/api/v1/namespaces/default/pods/<pod>:8080/proxy/` reaches the container **through the API
+  server**, with no Service yet: `Hello Kubernetes bootcamp! | Running on: ... | v=1`.
+- `kubectl logs` shows the app's own output, including the request counter.
+- `kubectl exec` runs commands inside the container: `env` shows `HOSTNAME` (= the Pod name)
+  and the injected `KUBERNETES_PORT`, and `head server.js` shows the app's source.
+
+### Module 4: exposing it with a Service, and labels
+
+![kubectl expose, NodePort curl, and labelling a Pod](images/12-basics-4-expose.png)
+
+`kubectl expose --type=NodePort` created a Service on node port 32459, reachable at
+`$(minikube ip):32459`. Labels: the Deployment's `app=kubernetes-bootcamp` is what the Service
+selects; I added `version=v1` to the Pod and queried with `-l version=v1`.
+
+### Module 5: scaling
+
+![Scaling to 4 replicas; the Service load-balances across them](images/13-basics-5-scale.png)
+
+`kubectl scale --replicas=4` gave 4 Pods with 4 IPs, and the Service's endpoints list all of
+them. Six `curl` requests were answered by three different Pods (`scdmh`, `wwd5l`, `w99f7`):
+the Service load-balancing in action. Then I scaled back down to 2.
+
+### Module 6: rolling update (and a rollback)
+
+![set image to v2, a bad image tag, and rollout undo](images/14-basics-6-rolling-update.png)
+
+- `kubectl set image ... :v2` rolled the Pods over one at a time, and the app now answers
+  `v=2`.
+- Setting a non-existent tag (`:v10`) left one new Pod in `ErrImagePull` while **the two v2
+  Pods kept serving**. The rolling update stops rather than taking the app down.
+- `kubectl rollout undo` went back to v2, and every Pod is `Running` on
+  `kubernetes-bootcamp:v2`.
+
+---
+
 ## Summary
 
 | Homework item | Status |
@@ -361,3 +419,4 @@ Everything above the Pod row in that table exists to fix some aspect of that.
 | `kubectl version` / `cluster-info` / `get pods` / `get nodes` | Done — Task 3 |
 | Test `apply` vs `create` deliberately | Done — Task 5 |
 | Extra credit: read `core-objects.md` | Done — Task 7 |
+| Kubernetes Basics tutorial, modules 1–6 hands-on (deploy, explore, expose, scale, rolling update) | Done — Task 8 |
