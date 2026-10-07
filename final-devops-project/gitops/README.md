@@ -10,6 +10,7 @@ identical to what the Helm chart renders from the `main` branch:
 | valueFiles | `values-dev.yaml` |
 | releaseName | `taskflow` |
 | syncPolicy | automated, `prune: true`, `selfHeal: true`, `CreateNamespace=true`, retry with backoff |
+| ignoreDifferences | StatefulSet `.spec.volumeClaimTemplates` (with `RespectIgnoreDifferences=true`). The API server fills in defaults on this immutable field, which otherwise leaves the app OutOfSync forever. |
 
 ## Set up
 

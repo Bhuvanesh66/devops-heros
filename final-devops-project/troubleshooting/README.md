@@ -70,7 +70,17 @@ kubectl -n taskflow-lab get deploy taskflow-backend -o jsonpath='{.spec.template
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-1 -->
+- **Root cause:** the Deployment asks for
+  `ghcr.io/bhuvanesh66/final-taskflow-backend:v1.0.O`, with a capital letter O
+  instead of a zero. No such tag exists in GHCR, so the kubelet gets
+  `ErrImagePull`. The old Pod kept serving, because the rollout uses
+  `maxUnavailable: 0`.
+- **Fix:** put back the tag that CI actually pushed (re-apply `lab-base`). In
+  the real pipeline the tag is always the commit SHA written by CI, never typed
+  by hand.
+- **Verification:** both backend Pods run the correct image and are `READY true`.
+
+![Issue 1: ErrImagePull on a tag that does not exist, then fixed](../images/41-issue-1.png)
 
 ---
 
@@ -94,7 +104,16 @@ kubectl -n taskflow-lab get svc
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-2 -->
+- **Root cause:** `DB_HOST=taskflow-postgresql`, but the PostgreSQL
+  Service is called `taskflow-postgres`. The `migrate` initContainer logs
+  `failed to resolve host 'taskflow-postgresql'` on every attempt, so the Pod
+  stays in `Init:0/1`. A ConfigMap change does not restart Pods by itself, which
+  is why the rollout restart is part of reproducing it.
+- **Fix:** correct `DB_HOST` and restart the Deployment.
+- **Verification:** the new Pod is `Running`, and `/api/stats` answers through
+  the frontend, so the whole path frontend → backend → database works.
+
+![Issue 2: migrate initContainer cannot resolve the DB host, then fixed](../images/42-issue-2.png)
 
 ---
 
@@ -115,7 +134,15 @@ kubectl -n taskflow-lab get pods --show-labels -l app.kubernetes.io/name=taskflo
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-3 -->
+- **Root cause:** the Service selects `app.kubernetes.io/component: api`,
+  but the Pods are labelled `component: backend`. The EndpointSlice is empty
+  (`<unset>`), so a call to the ClusterIP is rejected at once
+  (`Connection refused`) and never reaches a Pod.
+- **Fix:** set the selector back to `component: backend`.
+- **Verification:** the EndpointSlice lists both Pod IPs on port 8000, and
+  `/health` through the Service returns `{"status":"ok"}`.
+
+![Issue 3: empty EndpointSlice from a selector mismatch, then fixed](../images/43-issue-3.png)
 
 ---
 
@@ -139,7 +166,14 @@ kubectl -n taskflow-lab run tmp --rm -it --image=curlimages/curl:8.22.0 --restar
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-4 -->
+- **Root cause:** the Service forwards port 8000 to `targetPort: 8080`.
+  The container listens on 8000. The endpoints exist, which is the confusing
+  part, but nothing is listening on the port they point at.
+- **Fix:** point `targetPort` back at the named container port `http` (as in `lab-base`), so a port change
+  in the Pod cannot break the Service again.
+- **Verification:** the EndpointSlice shows port 8000 and `/health` answers.
+
+![Issue 4: endpoints on the wrong port, then fixed](../images/44-issue-4.png)
 
 ---
 
@@ -161,7 +195,15 @@ kubectl -n taskflow-lab logs deploy/taskflow-backend | tail     # the 404s are l
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-5 -->
+- **Root cause:** the readiness probe asks for `/readyz`. The app serves
+  `/ready`. The event says `HTTP probe failed with statuscode: 404`, and calling
+  both paths from inside the cluster shows `/readyz -> 404` and
+  `/ready -> 200`. The container is never restarted, because only liveness
+  failures restart it, so the Pod just stays `0/1` and the rollout waits.
+- **Fix:** probe `/ready`.
+- **Verification:** the new Pod becomes `1/1` and the old one terminates.
+
+![Issue 5: readiness probe on a 404 path, then fixed](../images/45-issue-5.png)
 
 ---
 
@@ -190,7 +232,15 @@ kubectl -n taskflow-lab get secret taskflow-db -o jsonpath='{.data}' ; echo   # 
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-6 -->
+- **Root cause:** the Secret only has the keys `DB_PASS` and `DB_USER`. The
+  Deployment reads `DB_PASSWORD` with `secretKeyRef`, so the kubelet refuses to
+  create the container: `couldn't find key DB_PASSWORD in Secret`.
+- **Fix:** delete the hand-made Secret and recreate it with the expected key
+  (re-apply `lab-base`). The delete matters, because `apply` would only merge
+  keys.
+- **Verification:** the new Pod is `Running 1/1`.
+
+![Issue 6: CreateContainerConfigError from a missing Secret key, then fixed](../images/46-issue-6.png)
 
 ---
 
@@ -212,7 +262,14 @@ kubectl top pods -n taskflow-lab     # proves metrics-server itself works
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-7 -->
+- **Root cause:** the backend container has `resources: {}`. HPA utilisation is
+  usage divided by the request, so without a request there is nothing to divide
+  by, and both targets show `<unknown>`. The HPA condition is
+  `ScalingActive False ... FailedGetResourceMetric`.
+- **Fix:** add the requests and limits back (`cpu: 100m`, `memory: 128Mi` requested).
+- **Verification:** two minutes later the HPA shows `cpu: 3%/70%, memory: 50%/80%`.
+
+![Issue 7: HPA targets unknown without resource requests, then fixed](../images/47-issue-7.png)
 
 ---
 
@@ -236,10 +293,37 @@ kubectl -n taskflow-lab get svc
 
 **Root cause, fix and verification.**
 
-<!-- LIVE: issue-8 -->
+- **Root cause:** `BACKEND_URL=http://taskflow-api:8000`, and there is no
+  Service called `taskflow-api` (only `taskflow-backend`, `taskflow-frontend` and
+  `taskflow-postgres`). nginx resolves `proxy_pass` hosts once at start-up, so
+  it stops with `[emerg] host not found in upstream "taskflow-api"` and the Pod
+  goes into `CrashLoopBackOff`.
+- **Fix:** `BACKEND_URL=http://taskflow-backend:8000` and restart the frontend.
+- **Verification:** the new frontend Pod is `Running`, and `/api/stats` through
+  its nginx proxy returns JSON.
+
+![Issue 8: nginx cannot resolve the backend host, then fixed](../images/48-issue-8.png)
 
 ---
 
 ## What I took away
 
-<!-- LIVE: troubleshooting-lessons -->
+The healthy baseline every issue starts from and returns to:
+
+![the healthy baseline: Pods, Services, endpoints and a working API call](../images/40-lab-baseline.png)
+
+- **Read the status column first.** `ErrImagePull`, `Init:0/1`,
+  `CreateContainerConfigError`, `0/1 Running` and `CrashLoopBackOff` each point
+  at a different layer before I open a single log.
+- **Running is not working.** In issues 3 and 4 every Pod was green. The
+  problem was only visible in the EndpointSlice, so I check endpoints whenever
+  "the Pods are fine but nothing answers".
+- **Config changes need a restart.** Changing a ConfigMap or Secret does not
+  restart Pods that read it through environment variables. The Helm chart rolls
+  them with checksum annotations, and in the lab I used `rollout restart`.
+- **Always verify through the real path.** A fix counts only after a request
+  goes through the same route a user's request takes (frontend → backend →
+  database), not just after the Pod turns green.
+- **Make the broken state hard to reach.** Named ports, image tags written by
+  CI, and a chart that refuses to render without a password each remove one of
+  these mistakes for good.

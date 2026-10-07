@@ -191,8 +191,14 @@ a SQLite file in a temporary directory before the app is imported, builds the
 schema by running the real Alembic migration (so the migration is tested too),
 and empties the table before every test.
 
-<!-- SHOT: 01-local-tests -->
-<!-- SHOT: 03-app-browser -->
+![ruff and pytest: 18 passed, 90% coverage](images/10-local-tests.png)
+
+![Alembic upgrade, downgrade and the generated SQL](images/11-alembic.png)
+TaskFlow in a browser (Playwright), served through the minikube Ingress at `taskflow.local`, and the same calls made with curl:
+
+![TaskFlow UI through the Ingress](images/23b-app-browser.png)
+
+![API calls through the Ingress and the rows in PostgreSQL](images/23-app-through-ingress.png)
 
 ## Docker setup
 
@@ -215,7 +221,9 @@ docker compose up --build
   `no-new-privileges`. Start-up is ordered with health checks
   (postgres → backend → frontend).
 
-<!-- SHOT: 02-compose-up -->
+![docker compose: three healthy containers, non-root, read-only, all capabilities dropped](images/13-compose-up.png)
+
+![TaskFlow from docker compose on localhost:3000](images/13b-compose-browser.png)
 
 ## Kubernetes deployment
 
@@ -239,8 +247,12 @@ kubectl -n taskflow get pods,svc,pvc,hpa,ingress
 | Probes | startup + liveness `/health`, readiness `/ready` (backend), `/healthz` (frontend), `pg_isready` (postgres) |
 | Storage | PostgreSQL StatefulSet with a 1Gi PersistentVolumeClaim from `volumeClaimTemplates` |
 
-<!-- SHOT: 06-k8s-resources -->
-<!-- SHOT: 08-hpa -->
+![images built inside minikube](images/20-build-images.png)
+
+![every object the chart created in namespace taskflow](images/22-k8s-resources.png)
+Under load (two busybox Pods calling `/api/tasks` in a loop) the backend HPA went from 2 to 4 replicas at 147 % CPU. On this 7 GB laptop the metrics-server lost its own metrics a minute later (`<unknown>`, and `kubectl top` failed), so the scale-down part is not in the screenshot.
+
+![HPA scaling the backend from 2 to 4 replicas](images/25-hpa.png)
 
 ## Helm deployment
 
@@ -260,7 +272,9 @@ when the ConfigMap or Secret changes, a required DB password (no silent
 default), `existingSecret` support, and toggles for the ServiceMonitor,
 PrometheusRule and Grafana dashboard.
 
-<!-- SHOT: 07-helm-release -->
+![helm lint, install and list](images/21-helm-install.png)
+
+![helm test: Succeeded](images/24-helm-test.png)
 
 ## Terraform infrastructure
 
@@ -287,9 +301,9 @@ repositories and an **EKS cluster with a managed node group** are optional
 (`enable_ecr`, `enable_eks`), because EKS is not free tier. `default_tags` tag
 every resource.
 
-<!-- SHOT: 12-terraform-plan -->
-<!-- SHOT: 13-terraform-apply -->
-<!-- SHOT: 15-terraform-destroy -->
+`terraform fmt`, `init` and `validate` pass, and CI runs the same checks (job 2). **`plan`, `apply` and `destroy` are still pending**: the AWS account for this coursework is waiting for AWS to finish activating it (S3 and EC2 calls return `NotSignedUp` / `OptInRequired`). These screenshots will be added when that is done.
+
+![terraform fmt, init and validate](images/12-terraform-validate.png)
 
 ## CI/CD pipeline
 
@@ -313,8 +327,20 @@ itself, and on `workflow_dispatch`. The default permission is
 | 9 | push-images | verifies the image IDs match the scanned build, pushes `ghcr.io/bhuvanesh66/final-taskflow-backend` and `-frontend` as `:<sha>` and `:latest` | main only (push or manual), never on PRs |
 | 10 | deploy | kind cluster, `kind load image-archive` of the scanned tars, `helm upgrade --install --wait` with the SHA tag and a random DB password, smoke tests through port-forward (`/health`, `/ready`, create + list through the backend and through the frontend's `/api` proxy, `/api/stats`, `/metrics`), `helm test`, `kubectl get all` in the job summary | rollout or any smoke test fails |
 
-<!-- SHOT: 04-pipeline-run -->
-<!-- SHOT: 04b-ghcr-packages -->
+![the green run in GitHub Actions](images/01b-actions-run.png)
+
+![all 11 jobs succeeded](images/01-pipeline-run.png)
+
+![lint, tests and frontend build on the runner](images/02-ci-tests.png)
+
+The first run of the pipeline failed in the very last step. Everything was deployed and `helm test` passed, but `helm test --logs` could not read the logs, because the hook policy `hook-succeeded` had already deleted the test Pod. Commit `465a228` keeps the Pod until the next test run, and the second run was green:
+
+![the failing first run, root cause and fix](images/06-first-run-failure.png)
+![images pushed to GHCR, deployed to kind with Helm and smoke-tested](images/05-push-deploy.png)
+
+![GHCR tags: the commit SHA and latest](images/07-ghcr-packages.png)
+
+![the public GHCR package page](images/07b-ghcr-package-page.png)
 
 ## DevSecOps implementation
 
@@ -334,7 +360,11 @@ Before the first push I checked the dependencies locally: `pip-audit` found
 no known vulnerabilities in either requirements file, `npm audit` found 0, and
 Bandit found no issues.
 
-<!-- SHOT: 05-security-gate -->
+![SAST, SCA, secret scan and image scan results](images/03-security-scans.png)
+
+![the security gate: PASS on all 8 checks](images/04-security-gate.png)
+
+One honest note on the image scan. The full Trivy table for the backend image lists 44 HIGH findings, all in Debian base-image packages that have **no fixed version yet**. The gate runs Trivy with `--ignore-unfixed`, so it blocks on anything I can actually fix by upgrading, and it reports 0. The unfixed findings are not hidden: the image-scan job prints the full all-severities table in its log (shown above), and the CycloneDX SBOM lists every package, so they can be re-checked once Debian ships fixes.
 
 ## Monitoring
 
@@ -356,10 +386,10 @@ Details: [monitoring/README.md](monitoring/README.md).
 - Logs: one JSON object per line on stdout (`kubectl logs`, or Loki with LogQL
   `| json`).
 
-<!-- SHOT: 09-grafana -->
-<!-- SHOT: 10-prometheus-alerts -->
-<!-- SHOT: 16-prometheus-targets -->
-<!-- SHOT: 17-metrics-endpoint -->
+I took the Prometheus and Grafana evidence from their HTTP APIs. In a headless browser on this laptop the two web UIs never finished loading their JavaScript under the memory pressure.
+
+![the TaskFlow dashboard provisioned from the chart, with its panels](images/27-grafana.png)
+![/metrics, 4 backend targets up, request rate by status, TaskFlow alert rules](images/26-metrics.png)
 
 ## GitOps
 
@@ -374,8 +404,14 @@ destination namespace `taskflow`, with automated `prune` + `selfHeal` and
 it. A manual change in the cluster is reverted by self-heal, and a rollback is
 a `git revert`.
 
-<!-- SHOT: 11-argocd -->
-<!-- SHOT: 11b-argocd-selfheal -->
+![Argo CD installed and the Application created](images/30-argocd-install.png)
+
+![Synced and Healthy, every resource from Git](images/31-argocd-synced.png)
+
+![the Argo CD UI: 14 resources Synced, 17 Healthy](images/32-argocd-ui.png)
+At first the app stayed **OutOfSync** because of the PostgreSQL StatefulSet. Kubernetes adds `apiVersion`, `kind`, `volumeMode` and an empty `status` to every `volumeClaimTemplate`. That field is immutable, so a sync can never make the live object match Git, and self-heal kept retrying. I found this by diffing the target and live state from the Argo CD API, then added an `ignoreDifferences` rule for `.spec.volumeClaimTemplates` with `RespectIgnoreDifferences=true` to `gitops/argocd-application.yaml`. After that the app was Synced, and a Service I deleted by hand was back 2 seconds later:
+
+![self-heal: the deleted Service is recreated in 2 seconds](images/33-argocd-selfheal.png)
 
 ## Troubleshooting
 
@@ -398,31 +434,35 @@ namespace `taskflow-lab`. Each `issue-N-*` overlay breaks one thing:
 For each issue the write-up covers the symptom, how I detected it, the root
 cause, the fix and the verification.
 
-<!-- SHOT: 18-troubleshooting -->
+Every issue, with the break, investigation, root cause, fix and verification, is in [troubleshooting/README.md](troubleshooting/README.md). Two examples:
+
+![Issue 2: wrong DB host](images/42-issue-2.png)
+
+![Issue 6: missing Secret key](images/46-issue-6.png)
 
 ## Screenshots
 
-| # | Evidence | |
+| # | Evidence | Screenshots |
 |---|---|---|
-| 01 | `pytest -v` all passing | <!-- SHOT: 01-local-tests --> |
-| 02 | `docker compose up --build` | <!-- SHOT: 02-compose-up --> |
-| 03 | TaskFlow in the browser | <!-- SHOT: 03-app-browser --> |
-| 04 | green pipeline run graph | <!-- SHOT: 04-pipeline-run --> |
-| 04b | GHCR packages with SHA tags | <!-- SHOT: 04b-ghcr-packages --> |
-| 05 | security gate summary | <!-- SHOT: 05-security-gate --> |
-| 06 | `kubectl get pods,svc,pvc,ingress -n taskflow` | <!-- SHOT: 06-k8s-resources --> |
-| 07 | `helm list` / `helm test` | <!-- SHOT: 07-helm-release --> |
-| 08 | HPA scaling under load | <!-- SHOT: 08-hpa --> |
-| 09 | Grafana dashboard with live data | <!-- SHOT: 09-grafana --> |
-| 10 | Prometheus alerts | <!-- SHOT: 10-prometheus-alerts --> |
-| 11 | Argo CD application synced / self-heal | <!-- SHOT: 11-argocd --> |
-| 12 | `terraform plan` | <!-- SHOT: 12-terraform-plan --> |
-| 13 | `terraform apply` + app on EC2 | <!-- SHOT: 13-terraform-apply --> |
-| 14 | AWS console (VPC, subnets, EC2) | <!-- SHOT: 14-aws-console --> |
-| 15 | `terraform destroy` | <!-- SHOT: 15-terraform-destroy --> |
-| 16 | Prometheus targets UP | <!-- SHOT: 16-prometheus-targets --> |
-| 17 | `curl /metrics` | <!-- SHOT: 17-metrics-endpoint --> |
-| 18 | a troubleshooting session | <!-- SHOT: 18-troubleshooting --> |
+| 01 | `pytest -v` all passing | [10](images/10-local-tests.png), [11](images/11-alembic.png) |
+| 02 | `docker compose up --build` | [13](images/13-compose-up.png), [13b](images/13b-compose-browser.png) |
+| 03 | TaskFlow in the browser | [23b](images/23b-app-browser.png), [23](images/23-app-through-ingress.png) |
+| 04 | green pipeline run graph | [01b](images/01b-actions-run.png), [01](images/01-pipeline-run.png), [02](images/02-ci-tests.png), [06](images/06-first-run-failure.png) |
+| 04b | GHCR packages with SHA tags | [05](images/05-push-deploy.png), [07](images/07-ghcr-packages.png), [07b](images/07b-ghcr-package-page.png) |
+| 05 | security gate summary | [03](images/03-security-scans.png), [04](images/04-security-gate.png) |
+| 06 | `kubectl get pods,svc,pvc,ingress -n taskflow` | [20](images/20-build-images.png), [22](images/22-k8s-resources.png) |
+| 07 | `helm list` / `helm test` | [21](images/21-helm-install.png), [24](images/24-helm-test.png) |
+| 08 | HPA scaling under load | [25](images/25-hpa.png) |
+| 09 | Grafana dashboard with live data | [27](images/27-grafana.png) (API) |
+| 10 | Prometheus alerts | [26](images/26-metrics.png) (rules) |
+| 11 | Argo CD application synced / self-heal | [30](images/30-argocd-install.png), [31](images/31-argocd-synced.png), [32](images/32-argocd-ui.png), [33](images/33-argocd-selfheal.png) |
+| 12 | `terraform plan` | [12](images/12-terraform-validate.png) (validate); plan pending AWS activation |
+| 13 | `terraform apply` + app on EC2 | pending AWS activation |
+| 14 | AWS console (VPC, subnets, EC2) | pending AWS activation |
+| 15 | `terraform destroy` | pending AWS activation |
+| 16 | Prometheus targets UP | [26](images/26-metrics.png) (targets) |
+| 17 | `curl /metrics` | [26](images/26-metrics.png) |
+| 18 | a troubleshooting session | [40](images/40-lab-baseline.png), [41](images/41-issue-1.png) to [48](images/48-issue-8.png) |
 
 ## Lessons learned
 
@@ -456,4 +496,14 @@ cause, the fix and the verification.
   and on the Alpine build stage. `kubectl apply` merges `stringData` into the
   existing `data`, which is why issue 6 needs the Secret deleted first.
 
-<!-- LIVE: lessons-learned -->
+- **Argo CD and StatefulSets.** Defaults that the API server writes into an
+  immutable field, here `volumeClaimTemplates`, leave an app OutOfSync forever.
+  The fix is `ignoreDifferences` plus `RespectIgnoreDifferences=true`. The way
+  to find it is to diff the target and live state, not to sync again.
+- **`helm test --logs` needs the Pod.** With `hook-delete-policy:
+  hook-succeeded` the test Pod is gone before its logs can be read, so the job
+  failed although the test had passed. `before-hook-creation` alone keeps it
+  until the next run.
+- **Know your own routes.** The Ingress sends `/api/*` to the backend's API
+  routes, so `/api/health` is a 404. The health checks live at `/health` and
+  `/ready` on the Service itself, and through the Ingress I check `/api/stats`.

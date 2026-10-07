@@ -24,6 +24,14 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: taskflow
+  # Kubernetes fills in apiVersion, kind, volumeMode and an empty status on each
+  # StatefulSet volumeClaimTemplate. The field is immutable, so the app would stay
+  # OutOfSync forever (and self-heal would keep retrying); ignore it.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .spec.volumeClaimTemplates
   syncPolicy:
     automated:
       prune: true    # delete resources that were removed from Git
@@ -31,6 +39,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
