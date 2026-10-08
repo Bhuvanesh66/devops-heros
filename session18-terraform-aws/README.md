@@ -70,16 +70,16 @@ Full explanation of every file and every command: **[terraform-s3-demo/README.md
 
 ### Screenshots summary
 
-<!-- SHOT: task1-summary -->
+I ran the whole workflow live on AWS (account in `ap-south-1`, Mumbai) on 8 October 2026. `apply` created the bucket `bhuvanesh-devops-s18-dev-a00b6454` with versioning `Enabled`, AES256 encryption, all four Block Public Access settings on, its six tags (the default tags plus Name), and `index.txt` inside it. The AWS CLI confirmed each of those from the AWS side, and `destroy` removed all 6 resources, leaving an empty state and no bucket.
 
-<!-- SHOT: 01-init -->
-<!-- SHOT: 02-fmt-validate -->
-<!-- SHOT: 03-plan -->
-<!-- SHOT: 04-apply -->
-<!-- SHOT: 05-show -->
-<!-- SHOT: 06-output -->
-<!-- SHOT: 07-aws-cli-verify -->
-<!-- SHOT: 08-destroy -->
+![terraform init: providers installed, lock file created](images/01-init.png)
+![terraform fmt and validate](images/02-fmt-validate.png)
+![terraform plan: 6 resources to add](images/03-plan.png)
+![terraform apply: 6 added, outputs printed](images/04-apply.png)
+![terraform state list and show](images/05-show.png)
+![terraform output](images/06-output.png)
+![the real bucket checked with the AWS CLI](images/07-aws-cli-verify.png)
+![terraform destroy: 6 destroyed, no bucket left](images/08-destroy.png)
 
 ---
 

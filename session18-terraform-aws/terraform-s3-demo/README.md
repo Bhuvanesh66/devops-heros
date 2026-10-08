@@ -138,7 +138,7 @@ terraform init
 - a note about the dependency lock file
 - the final green message saying Terraform has been successfully initialized
 
-<!-- SHOT: 01-init -->
+![terraform init: providers installed, lock file created](../images/01-init.png)
 
 ### Step 2 - `terraform fmt` and `terraform validate`
 
@@ -156,7 +156,7 @@ terraform validate     # check syntax, types and references
 - `terraform fmt` prints no file names (everything was already formatted)
 - `terraform validate` prints the green `Success!` message saying the configuration is valid
 
-<!-- SHOT: 02-fmt-validate -->
+![terraform fmt and validate](../images/02-fmt-validate.png)
 
 ### Step 3 - `terraform plan`
 
@@ -180,7 +180,7 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-<!-- SHOT: 03-plan -->
+![terraform plan: 6 resources to add](../images/03-plan.png)
 
 ### Step 4 - `terraform apply`
 
@@ -197,7 +197,7 @@ terraform apply
 - the `Outputs:` section with the real bucket name (ending in an 8-character hex suffix), the ARN, `ap-south-1`, versioning status `Enabled`, object key `index.txt`, the S3 URI and the console URL
 - a new `terraform.tfstate` file in the folder (ignored by Git)
 
-<!-- SHOT: 04-apply -->
+![terraform apply: 6 added, outputs printed](../images/04-apply.png)
 
 ### Step 5 - `terraform show`
 
@@ -216,7 +216,7 @@ terraform state show aws_s3_bucket.demo # one resource in detail
 - for the encryption resource: `sse_algorithm = "AES256"`
 - for the object: `key = "index.txt"`, `content_type = "text/plain"`, an `etag` and a `version_id` (present because versioning is on)
 
-<!-- SHOT: 05-show -->
+![terraform state list and show](../images/05-show.png)
 
 ### Step 6 - `terraform output`
 
@@ -231,7 +231,7 @@ terraform output -json             # all outputs as JSON
 
 **What to look for:** the same seven outputs that were printed at the end of `apply`. `-raw` prints the bucket name without quotes, which is how I pass it to the AWS CLI in the next step.
 
-<!-- SHOT: 06-output -->
+![terraform output](../images/06-output.png)
 
 ### Step 7 - Verify with the AWS CLI
 
@@ -259,7 +259,7 @@ In PowerShell the first line is `$BUCKET = terraform output -raw bucket_name`.
 - `BlockPublicAcls`, `IgnorePublicAcls`, `BlockPublicPolicy` and `RestrictPublicBuckets` are all `true`
 - the tag set includes `Owner = Bhuvanesh`, `Session = 18` and `ManagedBy = Terraform`
 
-<!-- SHOT: 07-aws-cli-verify -->
+![the real bucket checked with the AWS CLI](../images/07-aws-cli-verify.png)
 
 ### Step 8 - `terraform destroy`
 
@@ -278,7 +278,7 @@ terraform destroy
 - the final message reporting 6 resources destroyed
 - afterwards, `aws s3 ls` no longer lists the bucket and `terraform state list` prints nothing
 
-<!-- SHOT: 08-destroy -->
+![terraform destroy: 6 destroyed, no bucket left](../images/08-destroy.png)
 
 ---
 
