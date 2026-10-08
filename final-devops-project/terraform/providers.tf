@@ -8,9 +8,9 @@ provider "aws" {
       Project     = var.project_name
       Environment = var.environment
       # IAM and S3 reject "(" and ")" in tag values (EC2 accepts them), so no brackets here
-      Owner       = "Bhuvanesh M S - 24bcs10134"
-      ManagedBy   = "terraform"
-      Repository  = "github.com/Bhuvanesh66/devops-heros"
+      Owner      = "Bhuvanesh M S - 24bcs10134"
+      ManagedBy  = "terraform"
+      Repository = "github.com/Bhuvanesh66/devops-heros"
     }
   }
 }
