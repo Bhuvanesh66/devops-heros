@@ -211,7 +211,7 @@ Downloads the `aws` (6.x) and `random` (3.x) providers into `.terraform/` and us
 
 **Look for:** the provider install lines and "Terraform has been successfully initialized!".
 
-<!-- SHOT: 01-init -->
+![terraform init](images/01-init.png)
 
 ### Step 2 - `terraform fmt` and `terraform validate`
 
@@ -225,7 +225,7 @@ terraform validate
 
 **Look for:** no file names printed by `fmt -check`, and "Success! The configuration is valid."
 
-<!-- SHOT: 02-fmt-validate -->
+![terraform fmt and validate](images/02-fmt-validate.png)
 
 ### Step 3 - `terraform plan`
 
@@ -242,7 +242,7 @@ Reads the data sources (AMI ID, AZs), compares the code with the (empty) state a
 - `metadata_options` with `http_tokens = "required"`, the encrypted gp3 `root_block_device`, and `tags_all` containing the default tags
 - the "Changes to Outputs" section
 
-<!-- SHOT: 03-plan -->
+![terraform plan: 17 to add, IMDSv2 required, encrypted gp3, t3.micro](images/03-plan.png)
 
 ### Step 4 - `terraform apply`
 
@@ -257,7 +257,7 @@ Applying a saved plan does not ask for confirmation, because the plan was alread
 - `Apply complete! Resources: 17 added, 0 changed, 0 destroyed.`
 - the `Outputs:` block with `public_ip`, `website_url`, `bucket_name` and `banner_object_uri`
 
-<!-- SHOT: 04-apply -->
+![terraform apply: 17 added](images/04-apply.png)
 
 ### Step 5 - Inspect the state
 
@@ -269,7 +269,7 @@ terraform state show aws_s3_bucket.assets
 
 **Look for:** all 17 resource addresses plus the data sources (`data.aws_ssm_parameter.al2023` and so on); for the instance, `instance_state = "running"`, the `public_ip`, `subnet_id`, `vpc_security_group_ids` and `http_tokens = "required"`.
 
-<!-- SHOT: 05-state -->
+![terraform state list and the instance in state](images/05-state.png)
 
 ### Step 6 - `terraform output`
 
@@ -282,7 +282,7 @@ Reads output values from the state.
 
 **Look for:** the same values printed at the end of apply.
 
-<!-- SHOT: 06-output -->
+![terraform output](images/06-output.png)
 
 ### Step 7 - Open the website
 
@@ -294,7 +294,11 @@ curl "$(terraform output -raw website_url)"
 
 **Look for:** the instance ID, AZ, bucket name, the "Hello from Amazon S3" banner (this proves the EC2 -> S3 download through the IAM role worked) and the line "Provisioned by Terraform - Session 19 - Bhuvanesh M S". I also open the URL in a browser.
 
-<!-- SHOT: 07-website -->
+nginx answered about 30 seconds after `apply` finished. The page shows the instance details and the "Hello from Amazon S3" banner that the instance copied from the private bucket at boot, using its IAM role:
+
+![the website in a browser](images/07b-website-browser.png)
+
+![the website with curl](images/07-website.png)
 
 ### Step 8 - Check from the AWS side
 
@@ -316,7 +320,7 @@ Optional shell without SSH: `aws ssm start-session --target "$ID"` (the `ssm_ses
 
 **Look for:** state `running`, `t3.micro`, `HttpTokens = required`; ports 80 and 22 with the expected CIDRs; `banner.html` in the bucket; versioning `Enabled`; all four public access flags `true`.
 
-<!-- SHOT: 08-aws-cli -->
+![the resources checked from the AWS side](images/08-aws-cli.png)
 
 ### Step 9 - `terraform destroy`
 
@@ -328,7 +332,7 @@ Deletes everything in reverse dependency order: the instance first, then IAM, S3
 
 **Look for:** `Plan: 0 to add, 0 to change, 17 to destroy.`, the `yes` prompt, and `Destroy complete! Resources: 17 destroyed.` Afterwards `terraform state list` prints nothing.
 
-<!-- SHOT: 09-destroy -->
+![terraform destroy: 17 destroyed, instance terminated, bucket gone](images/09-destroy.png)
 
 ### Full sequence
 
