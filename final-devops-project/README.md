@@ -301,9 +301,41 @@ repositories and an **EKS cluster with a managed node group** are optional
 (`enable_ecr`, `enable_eks`), because EKS is not free tier. `default_tags` tag
 every resource.
 
-`terraform fmt`, `init` and `validate` pass, and CI runs the same checks (job 2). **`plan`, `apply` and `destroy` are still pending**: the AWS account for this coursework is waiting for AWS to finish activating it (S3 and EC2 calls return `NotSignedUp` / `OptInRequired`). These screenshots will be added when that is done.
+`terraform fmt`, `init` and `validate` pass, and CI runs the same checks (job 2):
 
 ![terraform fmt, init and validate](images/12-terraform-validate.png)
+
+I then ran the full lifecycle on AWS (`ap-south-1`, 8 October 2026). `plan` showed
+23 resources:
+
+![terraform plan: 23 to add](images/14-terraform-plan.png)
+
+The first `apply` failed half-way. IAM and S3 rejected my default tag
+`Owner = "Bhuvanesh M S (24bcs10134)"`, because they do not allow brackets in tag
+values, while EC2 does. So the VPC, subnets and security group were created, but
+the IAM role and the bucket were not. I destroyed the partial stack, changed the
+tag to `Bhuvanesh M S - 24bcs10134` in `providers.tf`, and ran it again from a
+clean state:
+
+![terraform apply: 23 added, with the outputs](images/15-terraform-apply.png)
+
+User data installed Docker, pulled both images from GHCR and started the stack.
+The app answered about 5 minutes after the instance booted:
+
+![TaskFlow on the EC2 host in a browser](images/16b-app-on-ec2-browser.png)
+
+![TaskFlow on the EC2 host with curl](images/16-app-on-ec2.png)
+
+I checked the resources from the AWS side with the AWS CLI: two public subnets in
+`ap-south-1a` and `ap-south-1b`, the instance `running` on `t3.micro` with IMDSv2
+`required` and its instance profile, and the bucket versioned with all four
+public-access blocks on:
+
+![the AWS resources checked with the AWS CLI](images/17-aws-cli.png)
+
+Then `destroy` removed all 23 resources, leaving no instance, VPC or bucket:
+
+![terraform destroy: 23 destroyed](images/18-terraform-destroy.png)
 
 ## CI/CD pipeline
 
@@ -456,10 +488,10 @@ Every issue, with the break, investigation, root cause, fix and verification, is
 | 09 | Grafana dashboard with live data | [27](images/27-grafana.png) (API) |
 | 10 | Prometheus alerts | [26](images/26-metrics.png) (rules) |
 | 11 | Argo CD application synced / self-heal | [30](images/30-argocd-install.png), [31](images/31-argocd-synced.png), [32](images/32-argocd-ui.png), [33](images/33-argocd-selfheal.png) |
-| 12 | `terraform plan` | [12](images/12-terraform-validate.png) (validate); plan pending AWS activation |
-| 13 | `terraform apply` + app on EC2 | pending AWS activation |
-| 14 | AWS console (VPC, subnets, EC2) | pending AWS activation |
-| 15 | `terraform destroy` | pending AWS activation |
+| 12 | `terraform plan` | [12](images/12-terraform-validate.png), [14](images/14-terraform-plan.png) |
+| 13 | `terraform apply` + app on EC2 | [15](images/15-terraform-apply.png), [16](images/16-app-on-ec2.png), [16b](images/16b-app-on-ec2-browser.png) |
+| 14 | AWS console (VPC, subnets, EC2) | [17](images/17-aws-cli.png) (checked with the AWS CLI) |
+| 15 | `terraform destroy` | [18](images/18-terraform-destroy.png) |
 | 16 | Prometheus targets UP | [26](images/26-metrics.png) (targets) |
 | 17 | `curl /metrics` | [26](images/26-metrics.png) |
 | 18 | a troubleshooting session | [40](images/40-lab-baseline.png), [41](images/41-issue-1.png) to [48](images/48-issue-8.png) |
@@ -504,6 +536,10 @@ Every issue, with the break, investigation, root cause, fix and verification, is
   hook-succeeded` the test Pod is gone before its logs can be read, so the job
   failed although the test had passed. `before-hook-creation` alone keeps it
   until the next run.
+- **Tag rules differ between AWS services.** EC2 accepted brackets in a tag
+  value, IAM and S3 did not, so the first `apply` stopped half-way.
+  `terraform validate` cannot catch this, because only the real API checks
+  it. Running the full lifecycle once is the only way to know the code works.
 - **Know your own routes.** The Ingress sends `/api/*` to the backend's API
   routes, so `/api/health` is a 404. The health checks live at `/health` and
   `/ready` on the Service itself, and through the Ingress I check `/api/stats`.
