@@ -1,0 +1,14 @@
+# EKS overlay, applied on top of values-dev.yaml (gitops/argocd-application-eks.yaml):
+#   helm upgrade --install taskflow helm/taskflow -n taskflow --create-namespace \
+#     -f helm/taskflow/values-dev.yaml -f helm/taskflow/values-eks.yaml
+
+postgres:
+  persistence:
+    # EKS 1.30+ ships gp2 without marking it as the default StorageClass,
+    # so an empty storageClass leaves the PVC Pending.
+    storageClass: gp2
+
+ingress:
+  # The ingress-nginx Service gets a random AWS load balancer DNS name.
+  # No host = the Ingress answers on that name directly.
+  host: ""

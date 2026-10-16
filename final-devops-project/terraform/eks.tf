@@ -107,17 +107,61 @@ resource "aws_eks_node_group" "default" {
 
 # EBS CSI driver so the PostgreSQL PVC can be provisioned on EKS. Without it,
 # the PVC stays Pending (a good troubleshooting story, but not for the demo).
+#
+# The controller gets its own IAM role through EKS Pod Identity. Falling back
+# to the node role does not work: AL2023 nodes limit IMDSv2 to one hop, so a
+# pod cannot reach the instance metadata and the controller crash-loops with
+# "no EC2 IMDS role found".
+resource "aws_eks_addon" "pod_identity_agent" {
+  count = local.eks_count
+
+  cluster_name = aws_eks_cluster.main[0].name
+  addon_name   = "eks-pod-identity-agent"
+
+  depends_on = [aws_eks_node_group.default]
+}
+
+data "aws_iam_policy_document" "ebs_csi_assume" {
+  statement {
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+    principals {
+      type        = "Service"
+      identifiers = ["pods.eks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi" {
+  count = local.eks_count
+
+  name               = "${local.name}-ebs-csi-role"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  count = local.eks_count
+
+  role       = aws_iam_role.ebs_csi[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
 resource "aws_eks_addon" "ebs_csi" {
   count = local.eks_count
 
   cluster_name                = aws_eks_cluster.main[0].name
   addon_name                  = "aws-ebs-csi-driver"
   resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
 
-  depends_on = [aws_eks_node_group.default]
+  pod_identity_association {
+    service_account = "ebs-csi-controller-sa"
+    role_arn        = aws_iam_role.ebs_csi[0].arn
+  }
+
+  depends_on = [aws_eks_addon.pod_identity_agent, aws_iam_role_policy_attachment.ebs_csi]
 }
 
-# The EBS CSI controller runs on the nodes and uses the node role for EBS calls.
+# Kept so the node itself can still attach volumes it is told about.
 resource "aws_iam_role_policy_attachment" "eks_node_ebs" {
   count = local.eks_count
 

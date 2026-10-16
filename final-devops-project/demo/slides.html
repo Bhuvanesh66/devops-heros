@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TaskFlow - DevOps Capstone</title>
+<style>
+  @page { size: 1280px 720px; margin: 0; }
+  :root {
+    --ink: #0f172a; --muted: #475569; --line: #cbd5e1; --bg: #ffffff;
+    --accent: #2563eb; --accent-soft: #dbeafe; --ok: #15803d; --ok-soft: #dcfce7;
+    --warn: #b45309; --warn-soft: #fef3c7; --dark: #0b1220;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  .slide { width: 1280px; height: 720px; padding: 56px 72px; position: relative;
+    page-break-after: always; break-after: page; overflow: hidden; display: flex; flex-direction: column; }
+  .slide:last-child { page-break-after: auto; break-after: auto; }
+  .kicker { font-size: 15px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin: 0 0 8px; }
+  h1 { font-size: 40px; line-height: 1.15; margin: 0 0 28px; font-weight: 700; }
+  h2 { font-size: 20px; margin: 0 0 10px; }
+  p, li { font-size: 20px; line-height: 1.45; color: var(--ink); }
+  ul { margin: 0; padding-left: 24px; } li { margin-bottom: 8px; }
+  .muted { color: var(--muted); }
+  .foot { position: absolute; left: 72px; right: 72px; bottom: 26px; display: flex; justify-content: space-between;
+    font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; flex: 1; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .card p, .card li { font-size: 17px; margin: 0 0 4px; }
+  .card h2 { font-size: 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 17px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: .06em; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 600; }
+  .ok { background: var(--ok-soft); color: var(--ok); }
+  .warn { background: var(--warn-soft); color: var(--warn); }
+  .title { background: var(--dark); color: #fff; justify-content: center; }
+  .title h1 { font-size: 64px; color: #fff; margin-bottom: 16px; }
+  .title p { color: #cbd5e1; font-size: 24px; margin: 4px 0; }
+  .title .kicker { color: #93c5fd; }
+  .chain { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 17px; }
+  .chain span.step { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #f8fafc; }
+  .chain span.arrow { color: var(--muted); }
+  svg text { font-family: "Segoe UI", system-ui, sans-serif; }
+  .big { font-size: 46px; font-weight: 700; line-height: 1; }
+</style>
+</head>
+<body>
+
+<!-- 1. Title -->
+<section class="slide title">
+  <p class="kicker">DevOps Final Capstone</p>
+  <h1>TaskFlow</h1>
+  <p>One Git commit, from a laptop to a monitored Kubernetes cluster on AWS</p>
+  <p style="margin-top:48px">Bhuvanesh M S &nbsp;·&nbsp; 24bcs10134</p>
+  <p style="font-size:18px">github.com/Bhuvanesh66/devops-heros &nbsp;·&nbsp; final-devops-project/</p>
+</section>
+
+<!-- 2. Overview -->
+<section class="slide">
+  <p class="kicker">Project overview</p>
+  <h1>What I built</h1>
+  <div class="grid2">
+    <div>
+      <h2>The application</h2>
+      <ul>
+        <li>A task tracker: title, description, priority, due date</li>
+        <li>Tasks move <b>to do → in progress → done</b></li>
+        <li>Filters by status and live counters (per status, open high-priority)</li>
+        <li>REST API with full CRUD, health, readiness and metrics</li>
+      </ul>
+    </div>
+    <div>
+      <h2>The real goal: the delivery chain</h2>
+      <ul>
+        <li>Tests and security scans gate every commit</li>
+        <li>Images tagged with the commit SHA in GHCR</li>
+        <li>Terraform builds the AWS VPC and EKS</li>
+        <li>Helm and Argo CD deploy to Kubernetes</li>
+        <li>Prometheus and Grafana watch it run</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>2</span></div>
+</section>
+
+<!-- 3. Tech stack -->
+<section class="slide">
+  <p class="kicker">Tech stack</p>
+  <h1>Tools at every layer</h1>
+  <table>
+    <tr><th style="width:24%">Layer</th><th>Technology</th></tr>
+    <tr><td>Frontend</td><td>React 19 + Vite 8, served by nginx-unprivileged</td></tr>
+    <tr><td>Backend</td><td>Python 3.12, FastAPI, SQLAlchemy 2, Alembic migrations</td></tr>
+    <tr><td>Database</td><td>PostgreSQL 17 (StatefulSet + PVC in Kubernetes)</td></tr>
+    <tr><td>Testing</td><td>pytest (18 tests, 90% coverage), ruff lint</td></tr>
+    <tr><td>Containers</td><td>Docker multi-stage builds, non-root, docker compose</td></tr>
+    <tr><td>CI/CD + Registry</td><td>GitHub Actions, GitHub Container Registry (GHCR)</td></tr>
+    <tr><td>DevSecOps</td><td>Semgrep, Bandit, pip-audit, npm audit, Gitleaks, Trivy</td></tr>
+    <tr><td>Infrastructure</td><td>Terraform → AWS VPC, EKS, EC2, S3 (ap-south-1)</td></tr>
+    <tr><td>Deploy / GitOps</td><td>Kubernetes, Helm, Ingress, HPA, Argo CD</td></tr>
+    <tr><td>Observability</td><td>Prometheus, Grafana, Alertmanager (kube-prometheus-stack)</td></tr>
+  </table>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>3</span></div>
+</section>
+
+<!-- 4. Architecture -->
+<section class="slide">
+  <p class="kicker">Architecture</p>
+  <h1>How a request flows at runtime</h1>
+  <svg viewBox="0 0 1136 470" width="1136" height="470" role="img" aria-label="Runtime architecture">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker>
+    </defs>
+    <g font-size="16" fill="#0f172a">
+      <!-- cluster frame -->
+      <rect x="170" y="10" width="956" height="450" rx="14" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="190" y="38" font-size="14" fill="#475569" font-weight="600">KUBERNETES · namespace taskflow (EKS on AWS / kind locally)</text>
+
+      <rect x="0" y="190" width="130" height="64" rx="10" fill="#fff" stroke="#0f172a"/>
+      <text x="65" y="228" text-anchor="middle" font-weight="600">Browser</text>
+
+      <rect x="200" y="180" width="150" height="84" rx="10" fill="#dbeafe" stroke="#2563eb"/>
+      <text x="275" y="215" text-anchor="middle" font-weight="600">Ingress</text>
+      <text x="275" y="240" text-anchor="middle" font-size="14">ingress-nginx</text>
+
+      <rect x="420" y="70" width="230" height="84" rx="10" fill="#fff" stroke="#2563eb"/>
+      <text x="535" y="104" text-anchor="middle" font-weight="600">Frontend × 2+</text>
+      <text x="535" y="128" text-anchor="middle" font-size="14">React static · nginx :8080</text>
+
+      <rect x="420" y="290" width="230" height="84" rx="10" fill="#fff" stroke="#2563eb"/>
+      <text x="535" y="324" text-anchor="middle" font-weight="600">Backend × 2+</text>
+      <text x="535" y="348" text-anchor="middle" font-size="14">FastAPI :8000 · /metrics</text>
+
+      <rect x="730" y="290" width="200" height="84" rx="10" fill="#fff" stroke="#0f172a"/>
+      <text x="830" y="324" text-anchor="middle" font-weight="600">PostgreSQL 17</text>
+      <text x="830" y="348" text-anchor="middle" font-size="14">StatefulSet + PVC</text>
+
+      <rect x="730" y="70" width="170" height="70" rx="10" fill="#fef3c7" stroke="#b45309"/>
+      <text x="815" y="101" text-anchor="middle" font-weight="600">Prometheus</text>
+      <text x="815" y="123" text-anchor="middle" font-size="14">ServiceMonitor 15s</text>
+
+      <rect x="950" y="70" width="150" height="70" rx="10" fill="#fef3c7" stroke="#b45309"/>
+      <text x="1025" y="111" text-anchor="middle" font-weight="600">Grafana</text>
+
+      <rect x="420" y="400" width="230" height="44" rx="10" fill="#dcfce7" stroke="#15803d"/>
+      <text x="535" y="428" text-anchor="middle" font-size="15">HPA: 2 → 4 pods on CPU</text>
+
+      <g stroke="#475569" stroke-width="2" fill="none">
+        <line x1="130" y1="222" x2="198" y2="222" marker-end="url(#a)"/>
+        <path d="M350 205 L420 120" marker-end="url(#a)"/>
+        <path d="M350 240 L420 325" marker-end="url(#a)"/>
+        <line x1="650" y1="332" x2="728" y2="332" marker-end="url(#a)"/>
+        <path d="M800 140 L620 290" marker-end="url(#a)"/>
+        <line x1="900" y1="105" x2="948" y2="105" marker-end="url(#a)"/>
+        <line x1="535" y1="400" x2="535" y2="376" marker-end="url(#a)" stroke-dasharray="5 4"/>
+      </g>
+      <text x="372" y="150" font-size="14" fill="#475569">/</text>
+      <text x="372" y="305" font-size="14" fill="#475569">/api</text>
+      <text x="662" y="320" font-size="14" fill="#475569">SQL</text>
+      <text x="700" y="215" font-size="14" fill="#475569">scrape</text>
+    </g>
+  </svg>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>4</span></div>
+</section>
+
+<!-- 5. CI/CD -->
+<section class="slide">
+  <p class="kicker">CI/CD flow</p>
+  <h1>GitHub Actions: every push to main</h1>
+  <div class="chain" style="margin-bottom:26px">
+    <span class="step">git push</span><span class="arrow">→</span>
+    <span class="step">Lint + pytest + frontend build</span><span class="arrow">→</span>
+    <span class="step">Validate IaC</span><span class="arrow">→</span>
+    <span class="step">SAST · SCA · Secret scan</span><span class="arrow">→</span>
+    <span class="step">Docker build + smoke test</span><span class="arrow">→</span>
+    <span class="step">Trivy image scan + SBOM</span><span class="arrow">→</span>
+    <span class="step" style="background:#dbeafe;border-color:#2563eb"><b>Security gate</b></span><span class="arrow">→</span>
+    <span class="step">Push to GHCR <b>:&lt;sha&gt;</b></span><span class="arrow">→</span>
+    <span class="step">Helm deploy + helm test</span>
+  </div>
+  <div class="grid3">
+    <div class="card"><h2>Tests gate the build</h2><p>A failing test stops the pipeline. No image is built or pushed.</p></div>
+    <div class="card"><h2>SHA tags, not latest</h2><p>Every image traces back to one exact commit, which makes rollback precise.</p></div>
+    <div class="card"><h2>Scanned = shipped</h2><p>The tar Trivy scanned is the one pushed. Image IDs are checked before push.</p></div>
+  </div>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>5</span></div>
+</section>
+
+<!-- 6. DevSecOps -->
+<section class="slide">
+  <p class="kicker">DevSecOps</p>
+  <h1>Scanners report, one gate decides</h1>
+  <table>
+    <tr><th>Check</th><th>Tool</th><th>Result</th></tr>
+    <tr><td>SAST</td><td>Semgrep (233 rules) + Bandit</td><td><span class="pill ok">0 findings</span></td></tr>
+    <tr><td>Dependencies (SCA)</td><td>pip-audit, npm audit, Trivy fs</td><td><span class="pill ok">0 vulnerabilities</span></td></tr>
+    <tr><td>Secrets</td><td>Gitleaks: files + git history</td><td><span class="pill ok">no leaks</span></td></tr>
+    <tr><td>Frontend image</td><td>Trivy</td><td><span class="pill ok">0 HIGH / CRITICAL</span></td></tr>
+    <tr><td>Backend image</td><td>Trivy</td><td><span class="pill warn">44 HIGH, 0 fixable</span></td></tr>
+  </table>
+  <p style="margin-top:22px">The 44 HIGH are all Debian 13 base packages (util-linux, perl…) with <b>no upstream fix yet</b>, e.g. CVE-2026-76642. The gate blocks any HIGH/CRITICAL <b>with a fix</b>. The app runs as non-root and never calls <code>mount</code>.</p>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>6</span></div>
+</section>
+
+<!-- 7. Infrastructure -->
+<section class="slide">
+  <p class="kicker">Infrastructure as Code</p>
+  <h1>Terraform on AWS (ap-south-1)</h1>
+  <div class="grid2">
+    <div>
+      <ul>
+        <li><b>VPC</b> 10.20.0.0/16 with an Internet Gateway</li>
+        <li><b>2 public subnets</b> in ap-south-1a and 1b</li>
+        <li><b>EKS 1.34</b> cluster with a managed <b>node group</b></li>
+        <li>EBS CSI add-on so Postgres gets a volume</li>
+        <li>EC2 Docker host (IMDSv2, encrypted disk) + S3 bucket</li>
+        <li>IAM roles with only the AWS-managed policies needed</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px"><h2>Workflow</h2><p><code>init → fmt → validate → plan → apply → destroy</code></p></div>
+      <div class="card" style="margin-bottom:16px"><h2>No secrets in Git</h2><p>Credentials come from the AWS CLI. Only <code>terraform.tfvars.example</code> is committed.</p></div>
+      <div class="card"><h2>Cost control</h2><p>EKS is not free tier, so it's created for the demo and destroyed right after.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>7</span></div>
+</section>
+
+<!-- 8. Kubernetes + Helm -->
+<section class="slide">
+  <p class="kicker">Kubernetes + Helm</p>
+  <h1>One chart, every environment</h1>
+  <div class="grid2" style="align-items:start">
+    <table style="font-size:16px">
+      <tr><th>Object</th><th>Setup</th></tr>
+      <tr><td>Deployments</td><td>backend + frontend, 2+ replicas, rolling update</td></tr>
+      <tr><td>Services</td><td>ClusterIP :8000 and :80</td></tr>
+      <tr><td>Ingress</td><td><code>/</code> → frontend, <code>/api</code> → backend</td></tr>
+      <tr><td>HPA</td><td>backend 2–4 on CPU</td></tr>
+      <tr><td>Probes</td><td>startup, liveness <code>/health</code>, readiness <code>/ready</code></td></tr>
+      <tr><td>Config</td><td>ConfigMap + Secret, no default password</td></tr>
+      <tr><td>Database</td><td>StatefulSet + PVC</td></tr>
+    </table>
+    <div>
+      <ul>
+        <li><code>values-dev.yaml</code> / <code>values-prod.yaml</code></li>
+        <li><code>helm upgrade --install</code> with the commit SHA</li>
+        <li><code>helm test</code> checks the live API</li>
+        <li><code>helm rollback</code> in seconds</li>
+        <li>Checksum annotations roll pods when config changes</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>8</span></div>
+</section>
+
+<!-- 9. GitOps -->
+<section class="slide">
+  <p class="kicker">GitOps</p>
+  <h1>Argo CD: Git is the source of truth</h1>
+  <div class="chain" style="margin-bottom:30px">
+    <span class="step">Change image tag in values-dev.yaml</span><span class="arrow">→</span>
+    <span class="step">git push</span><span class="arrow">→</span>
+    <span class="step">Argo CD detects the change</span><span class="arrow">→</span>
+    <span class="step" style="background:#dcfce7;border-color:#15803d">Sync to cluster</span>
+  </div>
+  <ul>
+    <li><b>Automated sync</b> with <b>prune</b> and <b>self-heal</b>: a Service deleted by hand came back in 2 seconds</li>
+    <li>Rollback = <code>git revert</code>, with a full audit trail in Git history</li>
+    <li>Fixed a permanent OutOfSync on the Postgres StatefulSet with <code>ignoreDifferences</code> on <code>volumeClaimTemplates</code></li>
+  </ul>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>9</span></div>
+</section>
+
+<!-- 10. Observability -->
+<section class="slide">
+  <p class="kicker">Observability</p>
+  <h1>Prometheus + Grafana</h1>
+  <div class="grid3" style="margin-bottom:24px">
+    <div class="card"><h2>Metrics</h2><p><code>/metrics</code>: request rate, latency histograms, status codes, plus tasks created / completed / deleted</p></div>
+    <div class="card"><h2>Scraping</h2><p>kube-prometheus-stack. A ServiceMonitor scrapes every backend pod every 15 s, all targets <b>UP</b></p></div>
+    <div class="card"><h2>Dashboard</h2><p>12 Grafana panels: traffic, 5xx ratio, p50/p95/p99 latency, CPU/memory, HPA replicas</p></div>
+  </div>
+  <h2>Alert rules</h2>
+  <p>Backend down · 5xx ratio &gt; 5% · p95 latency &gt; 0.5 s · pod restarts · HPA at max replicas</p>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>10</span></div>
+</section>
+
+<!-- 11. Troubleshooting -->
+<section class="slide">
+  <p class="kicker">Troubleshooting</p>
+  <h1>8 failures broken on purpose, then fixed</h1>
+  <table>
+    <tr><th>Broken</th><th>Symptom</th></tr>
+    <tr><td>Image tag that doesn't exist</td><td>ImagePullBackOff</td></tr>
+    <tr><td>Wrong DB host in the ConfigMap</td><td>Init:CrashLoopBackOff</td></tr>
+    <tr><td>Service selector doesn't match the pods</td><td>No endpoints, 502/503</td></tr>
+    <tr><td>Wrong Service targetPort</td><td>Connection refused</td></tr>
+    <tr><td>Readiness probe on the wrong path</td><td>0/1 READY, rollout stuck</td></tr>
+    <tr><td>Secret key renamed</td><td>CreateContainerConfigError</td></tr>
+    <tr><td>No resource requests</td><td>HPA targets &lt;unknown&gt;</td></tr>
+    <tr><td>Frontend points at a missing Service</td><td>nginx CrashLoopBackOff</td></tr>
+  </table>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>11</span></div>
+</section>
+
+<!-- 12. Learnings -->
+<section class="slide">
+  <p class="kicker">Key learnings</p>
+  <h1>What building it for real taught me</h1>
+  <ul>
+    <li><b>Readiness ≠ liveness.</b> If liveness checked the DB, one Postgres hiccup would restart every pod at once.</li>
+    <li><b>Only a real apply proves IaC.</b> IAM and S3 rejected brackets in a tag that EC2 accepted, and <code>validate</code> couldn't catch it.</li>
+    <li><b>Account limits matter.</b> An AWS Free-plan account refuses <code>t3.medium</code>, so the EKS node group hung until I switched to <code>m7i-flex.large</code>.</li>
+    <li><b>Scanners report, the gate decides.</b> A missing report counts as a failure, so the gate can't pass by accident.</li>
+    <li><b>GitOps and immutable fields.</b> API-server defaults in a StatefulSet kept Argo CD OutOfSync. The fix came from diffing the state, not from syncing again.</li>
+  </ul>
+  <div class="foot"><span>TaskFlow · DevOps Capstone</span><span>12</span></div>
+</section>
+
+<!-- 13. Demo -->
+<section class="slide title">
+  <p class="kicker">Next</p>
+  <h1>Live demo</h1>
+  <p>Code → push → pipeline → GHCR → Terraform + AWS → Argo CD → Kubernetes → Prometheus → Grafana</p>
+  <p style="margin-top:48px">Thank you</p>
+</section>
+
+</body>
+</html>

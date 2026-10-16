@@ -105,7 +105,7 @@ variable "eks_version" {
 }
 
 variable "eks_node_instance_type" {
-  description = "Instance type for the optional EKS managed node group."
+  description = "Instance type for the optional EKS managed node group. AWS Free-plan accounts only launch free-tier types; t3.medium is refused and the node group hangs in CREATING. m7i-flex.large (2 vCPU, 8 GiB) is allowed."
   type        = string
-  default     = "t3.medium"
+  default     = "m7i-flex.large"
 }

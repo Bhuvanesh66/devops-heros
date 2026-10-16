@@ -1,0 +1,49 @@
+﻿# Argo CD Application for the EKS cluster built by terraform/ (enable_eks = true).
+# Same as argocd-application.yaml plus the values-eks.yaml overlay (gp2 volume,
+# Ingress on the load balancer's DNS name). Applied once by hand:
+#   kubectl apply -f final-devops-project/gitops/argocd-application-eks.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: taskflow-eks
+  namespace: argocd
+  # delete the app's resources too when the Application is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Bhuvanesh66/devops-heros.git
+    targetRevision: main
+    path: final-devops-project/helm/taskflow
+    helm:
+      releaseName: taskflow
+      valueFiles:
+        - values-dev.yaml
+        - values-eks.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: taskflow
+  # Kubernetes fills in apiVersion, kind, volumeMode and an empty status on each
+  # StatefulSet volumeClaimTemplate. The field is immutable, so the app would stay
+  # OutOfSync forever (and self-heal would keep retrying); ignore it.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .spec.volumeClaimTemplates
+  syncPolicy:
+    automated:
+      prune: true    # delete resources that were removed from Git
+      selfHeal: true # undo manual changes made directly in the cluster
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10

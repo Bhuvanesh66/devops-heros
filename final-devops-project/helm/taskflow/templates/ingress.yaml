@@ -16,7 +16,10 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    # host "" = match any host, e.g. the AWS load balancer's own DNS name on EKS
+    - {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}
       http:
         paths:
           - path: /api
