@@ -51,7 +51,7 @@ export default function App() {
     <div className="page">
       <header className="header">
         <div>
-          <h1>TaskFlow</h1>
+          <h1>TaskFlow v2</h1>
           <p className="subtitle">Plan it, track it, ship it.</p>
         </div>
         <StatsBar stats={stats} />
