@@ -28,6 +28,21 @@ red job from hiding the results of the others, and the gate summary shows
 every scanner side by side. If the gate fails, `push-images` and `deploy` do
 not run.
 
+## Trivy result explained
+
+Trivy scanned both container images that CI builds: every Debian OS package
+and every Python / npm library inside them, checked against public CVE
+databases. The frontend image had no HIGH or CRITICAL findings. The backend
+image had 44 HIGH and 0 CRITICAL, all in Debian 13 base-image packages
+(util-linux, mount, login, perl-base...). None of them is in our own code or
+in `requirements.txt`, and Debian has no fixed version for any of them yet.
+For example, CVE-2026-76642 in util-linux 2.41.5 lets a failed mount helper
+still run privileged post-hooks. The app never calls `mount` and runs as a
+non-root user, so it cannot reach that path. The gate therefore passed: it
+blocks only HIGH/CRITICAL findings that have a fix, because a finding with no
+upstream fix cannot be patched by rebuilding. When Debian ships the fix, the
+next build fails until the image is rebuilt on the patched base.
+
 ## Run locally
 
 ```bash
